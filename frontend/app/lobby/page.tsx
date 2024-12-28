@@ -1,93 +1,113 @@
 // @ts-nocheck
 
-'use client'
+"use client";
 
-import { useEffect, useState } from 'react'
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Copy, Users, PlayCircle, Plus } from 'lucide-react'
-import { motion } from "framer-motion"
-import { Header, shortenAddress } from "@/components/header"
-import { RpcProvider, Contract, WalletAccount } from "starknet"
-import { connect } from "get-starknet"
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Copy, Users, PlayCircle, Plus } from "lucide-react";
+import { motion } from "framer-motion";
+import { Header, shortenAddress } from "@/components/header";
+import { RpcProvider, Contract, WalletAccount, CallData } from "starknet";
+import { connect } from "get-starknet";
+import { BigNumberish } from "starknet";
+import { join } from "path";
 
 interface Player {
-  id: string
-  address: string
-  name: string
-  calimeroKey: string
+  id: string;
+  address: string;
+  name: string;
+  calimeroKey: string;
 }
 
 export default function GameLobby() {
-  const [isCreateGameOpen, setIsCreateGameOpen] = useState(false)
-  const [isJoinGameOpen, setIsJoinGameOpen] = useState(false)
-  const [gameId, setGameId] = useState("")
-  const [currentGame, setCurrentGame] = useState<{ id: string; players: Player[] } | null>(null)
-  const [joinError, setJoinError] = useState("")
-  const [connection, setConnection] = useState(null)
-  const [address, setAddress] = useState("")
-  const [mafiaContract, setMafiaContract] = useState(null)
-  const [playerName, setPlayerName] = useState("")
-  const [calimeroKey, setCalimeroKey] = useState("")
+  const [isCreateGameOpen, setIsCreateGameOpen] = useState(false);
+  const [isJoinGameOpen, setIsJoinGameOpen] = useState(false);
+  const [gameId, setGameId] = useState("");
+  const [currentGame, setCurrentGame] = useState<{
+    id: string;
+    players: Player[];
+  } | null>(null);
+  const [joinError, setJoinError] = useState("");
+  const [connection, setConnection] = useState(null);
+  const [address, setAddress] = useState("");
+  const [mafiaContract, setMafiaContract] = useState(null);
+  const [playerName, setPlayerName] = useState("");
+  const [calimeroKey, setCalimeroKey] = useState("");
 
   const provider = new RpcProvider({
     nodeUrl: process.env.NEXT_PUBLIC_STARKNET_RPC_URL,
-  })
+  });
 
   useEffect(() => {
     const handleConnectWallet = async () => {
       try {
         const selectedWalletSWO = await connect({
           modalTheme: "dark",
-        })
+        });
         const wallet = await new WalletAccount(
           { nodeUrl: process.env.NEXT_PUBLIC_STARKNET_RPC_URL },
           selectedWalletSWO
-        )
+        );
 
         if (wallet) {
-          setConnection(wallet)
-          setAddress(wallet.walletProvider.selectedAddress)
+          setConnection(wallet);
+          setAddress(wallet.walletProvider.selectedAddress);
         }
       } catch (error) {
-        console.error("Error connecting wallet:", error)
+        console.error("Error connecting wallet:", error);
       }
-    }
+    };
 
-    handleConnectWallet()
-  }, [])
+    handleConnectWallet();
+  }, []);
 
   const getContract = async () => {
     if (mafiaContract != null) {
-      return mafiaContract
+      return mafiaContract;
     }
 
-    const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS
-    const { abi: contractAbi } = await provider.getClassAt(contractAddress)
+    const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS;
+    const { abi: contractAbi } = await provider.getClassAt(contractAddress);
     if (contractAbi === undefined) {
-      throw new Error("no abi.")
+      throw new Error("no abi.");
     }
-    const contract = new Contract(contractAbi, contractAddress, provider)
-    setMafiaContract(contract)
-    return contract
-  }
+    const contract = new Contract(contractAbi, contractAddress, provider);
+    setMafiaContract(contract);
+    return contract;
+  };
 
   const doesGameExist = async (gameId: string) => {
-    const contract = await getContract()
-    console.log(contract)
-    const res = await contract.does_game_exist(gameId)
-    return res
-  }
+    const contract = await getContract();
+    // console.log(contract);
+    const res = await contract.does_game_exist(gameId);
+    return res;
+  };
 
-  const joinGame = async (gameId: string, playerName: string, calimeroKey: string) => {
+  const joinGame = async (
+    gameId: string,
+    playerName: string,
+    calimeroKey: string
+  ) => {
+    console.log("Joining game... with address: ", address);
     const call = await connection.execute([
       {
         contractAddress: process.env.NEXT_PUBLIC_CONTRACT_ADDRESS,
         entrypoint: "join_game",
         calldata: CallData.compile({
-          
+          player: address,
+          game_id: gameId,
+          player_name: playerName,
+          public_identity_key: calimeroKey,
         }),
       },
     ]);
@@ -95,22 +115,32 @@ export default function GameLobby() {
     console.log(call);
 
     await provider.waitForTransaction(call.transaction_hash);
-  }
+  };
+
+  const fetchPlayers = async (gameId: string) => {
+    const contract = await getContract();
+    const res = await contract.get_players(gameId);
+    // for (player in res) {
+    //   console.log(player);
+    // }
+    console.log(res);
+    return res;
+  };
 
   const handleCreateGame = async () => {
     if (!playerName || !calimeroKey) {
-      setJoinError("Please enter your name and Calimero public identity key")
-      return
+      setJoinError("Please enter your name and Calimero public identity key");
+      return;
     }
 
-    let newGameId
-    let gameExists = true
+    let newGameId;
+    let gameExists = true;
     while (gameExists) {
-      newGameId = `game_${Math.random().toString(36).substr(2, 9)}`
-      gameExists = await doesGameExist(newGameId)
+      newGameId = `game_${Math.random().toString(36).substr(2, 9)}`;
+      gameExists = await doesGameExist(newGameId);
     }
 
-
+    joinGame(newGameId, playerName, calimeroKey);
 
     setCurrentGame({
       id: newGameId,
@@ -122,21 +152,26 @@ export default function GameLobby() {
           calimeroKey: calimeroKey,
         },
       ],
-    })
-    setIsCreateGameOpen(false)
-  }
+    });
+    setIsCreateGameOpen(false);
+  };
 
   const handleJoinGame = async () => {
+    await fetchPlayers(gameId);
     if (!playerName || !calimeroKey) {
-      setJoinError("Please enter your name and Calimero public identity key")
-      return
+      setJoinError("Please enter your name and Calimero public identity key");
+      return;
     }
 
-    const gameExists = await doesGameExist(gameId)
-    if (!gameExists) {
-      setJoinError("Game does not exist")
-      return
-    }
+    // const gameExists = await doesGameExist(gameId)
+    // if (!gameExists) {
+    //   setJoinError("Game does not exist")
+    //   return
+    // }
+
+    await joinGame(gameId, playerName, calimeroKey);
+    const players = await fetchPlayers(gameId);
+    console.log(players);
 
     if (gameId.trim()) {
       setCurrentGame((prevGame) => ({
@@ -150,28 +185,28 @@ export default function GameLobby() {
             calimeroKey: calimeroKey,
           },
         ],
-      }))
-      setJoinError("")
-      setIsJoinGameOpen(false)
+      }));
+      setJoinError("");
+      setIsJoinGameOpen(false);
     } else {
-      setJoinError("Please enter a valid game ID")
+      setJoinError("Please enter a valid game ID");
     }
-  }
+  };
 
   const copyGameId = () => {
     if (currentGame?.id) {
-      navigator.clipboard.writeText(currentGame.id)
+      navigator.clipboard.writeText(currentGame.id);
     }
-  }
+  };
 
-  const canStartGame = currentGame?.players.length >= 4
+  const canStartGame = currentGame?.players.length >= 4;
 
   const handleStartGame = () => {
     if (canStartGame) {
-      console.log("Starting game...")
+      console.log("Starting game...");
       // Add your game start logic here
     }
-  }
+  };
 
   return (
     <div className="min-h-screen bg-white">
@@ -298,7 +333,8 @@ export default function GameLobby() {
             <DialogHeader>
               <DialogTitle>Create New Game</DialogTitle>
               <DialogDescription>
-                Enter your name and Calimero public identity key to create a new game.
+                Enter your name and Calimero public identity key to create a new
+                game.
               </DialogDescription>
             </DialogHeader>
             <Input
@@ -327,7 +363,8 @@ export default function GameLobby() {
             <DialogHeader>
               <DialogTitle>Join Game</DialogTitle>
               <DialogDescription>
-                Enter the game ID, your name, and Calimero public identity key to join an existing game.
+                Enter the game ID, your name, and Calimero public identity key
+                to join an existing game.
               </DialogDescription>
             </DialogHeader>
             <Input
@@ -358,6 +395,5 @@ export default function GameLobby() {
         </Dialog>
       </div>
     </div>
-  )
+  );
 }
-

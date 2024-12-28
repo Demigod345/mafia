@@ -8,6 +8,19 @@ struct PlayerInfo {
     has_voted_moderator: bool,
 }
 
+#[derive(Copy, Drop, Serde, starknet::Store)]
+struct GameState {
+    started: bool,
+    ended: bool,
+    current_phase: u8,
+    player_count: u32,
+    current_day: u32,
+    moderator: ContractAddress,
+    is_moderator_chosen: bool,
+    mafia_count: u32,
+    villager_count: u32,
+}
+
 const GAME_SETUP: u8 = 0;
 const MODERATOR_VOTE: u8 = 1;
 const ROLE_ASSIGNMENT: u8 = 2;
@@ -17,9 +30,20 @@ const VOTING: u8 = 5;
 
 #[starknet::interface]
 trait IMafiaGame<TContractState> {
-    fn join_game(ref self: TContractState, game_id: felt252, name: felt252, public_identity_key: felt252);
+    fn join_game(
+        ref self: TContractState,
+        player: ContractAddress,
+        game_id: felt252,
+        name: felt252,
+        public_identity_key: felt252,
+    );
     fn start_game(ref self: TContractState, game_id: felt252);
-    fn vote_for_moderator(ref self: TContractState, game_id: felt252, candidate: ContractAddress);
+    fn vote_for_moderator(
+        ref self: TContractState,
+        player: ContractAddress,
+        game_id: felt252,
+        candidate: ContractAddress,
+    );
     fn finalize_moderator_selection(ref self: TContractState, game_id: felt252);
     // fn submit_role_commitments(
     //     ref self: TContractState,
@@ -38,6 +62,7 @@ trait IMafiaGame<TContractState> {
     //     ref self: TContractState, game_id: felt252, day_id: u32, votee: ContractAddress
     // );
     // fn end_day(ref self: TContractState, game_id: felt252, day_id: u32);
+    fn get_game_state(self: @TContractState, game_id: felt252) -> GameState;    
     fn get_moderator(self: @TContractState, game_id: felt252) -> ContractAddress;
     fn get_players(self: @TContractState, game_id: felt252) -> Array<ContractAddress>;
     fn get_player_info(
@@ -54,7 +79,7 @@ trait IMafiaGame<TContractState> {
 mod MafiaGame {
     use super::IMafiaGame;
     use core::starknet::{
-        ContractAddress, get_caller_address, contract_address_const, get_block_timestamp,
+        ContractAddress, contract_address_const, get_block_timestamp,
     };
     use core::starknet::storage::{
         StoragePointerReadAccess, StoragePointerWriteAccess, StorageMapReadAccess,
@@ -66,23 +91,11 @@ mod MafiaGame {
     use core::hash::LegacyHash;
     use core::pedersen::pedersen;
 
-    #[derive(Copy, Drop, Serde, starknet::Store)]
-    struct GameState {
-        started: bool,
-        ended: bool,
-        current_phase: u8,
-        player_count: u32,
-        current_day: u32,
-        moderator: ContractAddress,
-        is_moderator_chosen: bool,
-        mafia_count: u32,
-        villager_count: u32,
-    }
 
     #[storage]
     struct Storage {
         // Game state management
-        games: Map<felt252, GameState>,
+        games: Map<felt252, super::GameState>,
         // Player management per game
         game_players: Map<(felt252, ContractAddress), super::PlayerInfo>,
         game_player_addresses: Map<(felt252, u32), ContractAddress>,
@@ -180,11 +193,17 @@ mod MafiaGame {
 
     #[abi(embed_v0)]
     impl MafiaGameImpl of super::IMafiaGame<ContractState> {
-        fn join_game(ref self: ContractState, game_id: felt252, name: felt252, public_identity_key: felt252) {
+        fn join_game(
+            ref self: ContractState,
+            player: ContractAddress,
+            game_id: felt252,
+            name: felt252,
+            public_identity_key: felt252,
+        ) {
             let mut game_state = self._get_or_create_game(game_id);
             assert(!game_state.started, 'Game already started');
 
-            let caller = get_caller_address();
+            let caller = player.clone();
             let existing_player = self.game_players.read((game_id, caller));
             assert(existing_player.address == contract_address_const::<0>(), 'Already joined');
 
@@ -271,9 +290,12 @@ mod MafiaGame {
             game_state.player_count > 0
         }
         fn vote_for_moderator(
-            ref self: ContractState, game_id: felt252, candidate: ContractAddress,
+            ref self: ContractState,
+            player: ContractAddress,
+            game_id: felt252,
+            candidate: ContractAddress,
         ) {
-            let caller = get_caller_address();
+            let caller = player.clone();
             let game_state = self._get_game(game_id);
             assert(game_state.started, 'Game not started');
             assert(game_state.current_phase == super::MODERATOR_VOTE, 'Not moderator voting phase');
@@ -308,6 +330,7 @@ mod MafiaGame {
 
             self.emit(ModeratorVoteCast { game_id, voter: caller, candidate });
         }
+
         fn finalize_moderator_selection(ref self: ContractState, game_id: felt252) {
             let mut game_state = self._get_game(game_id);
             assert(game_state.started, 'Game not started');
@@ -338,6 +361,10 @@ mod MafiaGame {
             assert(self.is_game_started(game_id), 'Game not started');
             assert(self.get_phase(game_id) >= super::ROLE_ASSIGNMENT, 'Incorrect phase');
             self._get_game(game_id).moderator
+        }
+
+        fn get_game_state(self: @ContractState, game_id: felt252) -> super::GameState {
+            self._get_game(game_id)
         }
         // fn submit_role_commitments(
     //     ref self: ContractState, players: Array<ContractAddress>, commitments:
@@ -520,10 +547,10 @@ mod MafiaGame {
         //     mafia_count == 0 || mafia_count >= villager_count
         // }
 
-        fn _get_or_create_game(ref self: ContractState, game_id: felt252) -> GameState {
+        fn _get_or_create_game(ref self: ContractState, game_id: felt252) -> super::GameState {
             let game_state = self.games.read(game_id);
             if game_state.started == false && game_state.ended == false {
-                return GameState {
+                return super::GameState {
                     started: false,
                     ended: false,
                     current_phase: 0,
@@ -538,7 +565,7 @@ mod MafiaGame {
             game_state
         }
 
-        fn _get_game(self: @ContractState, game_id: felt252) -> GameState {
+        fn _get_game(self: @ContractState, game_id: felt252) -> super::GameState {
             let game_state = self.games.read(game_id);
             assert(game_state.player_count > 0, 'Game does not exist');
             game_state
