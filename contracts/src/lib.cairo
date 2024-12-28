@@ -10,6 +10,7 @@ struct PlayerInfo {
 
 #[derive(Copy, Drop, Serde, starknet::Store)]
 struct GameState {
+    created: bool,
     started: bool,
     ended: bool,
     current_phase: u8,
@@ -21,15 +22,20 @@ struct GameState {
     villager_count: u32,
 }
 
-const GAME_SETUP: u8 = 0;
-const MODERATOR_VOTE: u8 = 1;
-const ROLE_ASSIGNMENT: u8 = 2;
-const NIGHT: u8 = 3;
-const DAY: u8 = 4;
-const VOTING: u8 = 5;
+const PHASE_GAME_SETUP: u8 = 0;
+const PHASE_MODERATOR_VOTE: u8 = 1;
+const PHASE_ROLE_ASSIGNMENT: u8 = 2;
+const PHASE_NIGHT: u8 = 3;
+const PHASE_DAY: u8 = 4;
+const PHASE_VOTING: u8 = 5;
+
+const ROLE_VILLAGER: u8 = 0;
+const ROLE_MAFIA: u8 = 1;
+const ROLE_MODERATOR: u8 = 2;
 
 #[starknet::interface]
 trait IMafiaGame<TContractState> {
+    fn create_game(ref self: TContractState, game_id: felt252);
     fn join_game(
         ref self: TContractState,
         player: ContractAddress,
@@ -63,16 +69,10 @@ trait IMafiaGame<TContractState> {
     // );
     // fn end_day(ref self: TContractState, game_id: felt252, day_id: u32);
     fn get_game_state(self: @TContractState, game_id: felt252) -> GameState;    
-    fn get_moderator(self: @TContractState, game_id: felt252) -> ContractAddress;
     fn get_players(self: @TContractState, game_id: felt252) -> Array<ContractAddress>;
     fn get_player_info(
         self: @TContractState, game_id: felt252, player: ContractAddress,
     ) -> PlayerInfo;
-    fn get_phase(self: @TContractState, game_id: felt252) -> u8;
-    fn is_game_started(self: @TContractState, game_id: felt252) -> bool;
-    fn is_game_ended(self: @TContractState, game_id: felt252) -> bool;
-    fn get_current_day(self: @TContractState, game_id: felt252) -> u32;
-    fn does_game_exist(self: @TContractState, game_id: felt252) -> bool;
 }
 
 #[starknet::contract]
@@ -193,6 +193,22 @@ mod MafiaGame {
 
     #[abi(embed_v0)]
     impl MafiaGameImpl of super::IMafiaGame<ContractState> {
+        fn create_game(ref self: ContractState, game_id: felt252) {
+            assert(!self._does_game_exist(game_id), 'Game already exists');
+            let game_state = super::GameState {
+                created: true,
+                started: false,
+                ended: false,
+                current_phase: super::PHASE_GAME_SETUP,
+                player_count: 0,
+                current_day: 0,
+                moderator: contract_address_const::<0>(),
+                is_moderator_chosen: false,
+                mafia_count: 0,
+                villager_count: 0,
+            };
+            self.games.write(game_id, game_state);
+        }
         fn join_game(
             ref self: ContractState,
             player: ContractAddress,
@@ -200,7 +216,8 @@ mod MafiaGame {
             name: felt252,
             public_identity_key: felt252,
         ) {
-            let mut game_state = self._get_or_create_game(game_id);
+            assert(self._does_game_exist(game_id), 'Game does not exist');
+            let mut game_state = self._get_game(game_id);
             assert(!game_state.started, 'Game already started');
 
             let caller = player.clone();
@@ -230,7 +247,7 @@ mod MafiaGame {
             assert(game_state.player_count >= 4, 'Not enough players');
 
             game_state.started = true;
-            game_state.current_phase = super::MODERATOR_VOTE; // MODERATOR_VOTE phase
+            game_state.current_phase = super::PHASE_MODERATOR_VOTE; // PHASE_MODERATOR_VOTE phase
             game_state.current_day = 0;
             self.games.write(game_id, game_state);
 
@@ -242,23 +259,7 @@ mod MafiaGame {
                         player_count: game_state.player_count,
                     },
                 );
-            self.emit(PhaseChanged { game_id, new_phase: super::MODERATOR_VOTE });
-        }
-
-        fn get_phase(self: @ContractState, game_id: felt252) -> u8 {
-            self._get_game(game_id).current_phase
-        }
-
-        fn is_game_started(self: @ContractState, game_id: felt252) -> bool {
-            self._get_game(game_id).started
-        }
-
-        fn is_game_ended(self: @ContractState, game_id: felt252) -> bool {
-            self._get_game(game_id).ended
-        }
-
-        fn get_current_day(self: @ContractState, game_id: felt252) -> u32 {
-            self._get_game(game_id).current_day
+            self.emit(PhaseChanged { game_id, new_phase: super::PHASE_MODERATOR_VOTE });
         }
 
         fn get_players(self: @ContractState, game_id: felt252) -> Array<ContractAddress> {
@@ -285,10 +286,6 @@ mod MafiaGame {
             self.game_players.read((game_id, player))
         }
 
-        fn does_game_exist(self: @ContractState, game_id: felt252) -> bool {
-            let game_state = self.games.read(game_id);
-            game_state.player_count > 0
-        }
         fn vote_for_moderator(
             ref self: ContractState,
             player: ContractAddress,
@@ -298,7 +295,7 @@ mod MafiaGame {
             let caller = player.clone();
             let game_state = self._get_game(game_id);
             assert(game_state.started, 'Game not started');
-            assert(game_state.current_phase == super::MODERATOR_VOTE, 'Not moderator voting phase');
+            assert(game_state.current_phase == super::PHASE_MODERATOR_VOTE, 'Not moderator voting phase');
 
             let voter = self.game_players.read((game_id, caller));
             assert(voter.address != contract_address_const::<0>(), 'Invalid player');
@@ -334,15 +331,15 @@ mod MafiaGame {
         fn finalize_moderator_selection(ref self: ContractState, game_id: felt252) {
             let mut game_state = self._get_game(game_id);
             assert(game_state.started, 'Game not started');
-            assert(game_state.current_phase == super::MODERATOR_VOTE, 'Not moderator voting phase');
+            assert(game_state.current_phase == super::PHASE_MODERATOR_VOTE, 'Not moderator voting phase');
             assert(!game_state.is_moderator_chosen, 'Moderator already chosen');
             let chosen_moderator = self._get_winning_moderator(game_id);
 
             game_state.moderator = chosen_moderator;
             game_state.is_moderator_chosen = true;
-            game_state.current_phase = super::ROLE_ASSIGNMENT; // Move to ROLE_ASSIGNMENT phase
+            game_state.current_phase = super::PHASE_ROLE_ASSIGNMENT; // Move to PHASE_ROLE_ASSIGNMENT phase
             self.games.write(game_id, game_state);
-
+            self.game_revealed_roles.write((game_id, chosen_moderator), super::ROLE_MAFIA);
             self
                 .emit(
                     ModeratorChosen {
@@ -353,51 +350,77 @@ mod MafiaGame {
                             .read((game_id, chosen_moderator)),
                     },
                 );
-            self.emit(PhaseChanged { game_id, new_phase: super::ROLE_ASSIGNMENT });
-        }
-
-        fn get_moderator(self: @ContractState, game_id: felt252) -> ContractAddress {
-            assert(self.does_game_exist(game_id), 'Game does not exist');
-            assert(self.is_game_started(game_id), 'Game not started');
-            assert(self.get_phase(game_id) >= super::ROLE_ASSIGNMENT, 'Incorrect phase');
-            self._get_game(game_id).moderator
+            self.emit(PhaseChanged { game_id, new_phase: super::PHASE_ROLE_ASSIGNMENT });
         }
 
         fn get_game_state(self: @ContractState, game_id: felt252) -> super::GameState {
             self._get_game(game_id)
         }
+
         // fn submit_role_commitments(
-    //     ref self: ContractState, players: Array<ContractAddress>, commitments:
-    //     Array<felt252>,
-    // ) {
-    //     let caller = get_caller_address();
-    //     assert(caller == self.moderator.read(), 'Not moderator');
-    //     assert(self.current_phase.read() == 2, 'Not role assignment phase');
+        //     ref self: ContractState,
+        //     game_id: felt252,
+        //     players: Array<ContractAddress>,
+        //     commitments: Array<felt252>,
+        // ) {
+        //     let mut game_state = self._get_game(game_id);
+        //     assert(game_state.started, 'Game not started');
+        //     assert(game_state.current_phase == super::PHASE_ROLE_ASSIGNMENT, 'Not role assignment phase');
 
         //     let mut i: u32 = 0;
-    //     let players_len = players.len();
-    //     assert(players_len == commitments.len(), 'Array length mismatch');
+        //     let players_len = players.len();
+        //     assert(players_len == commitments.len(), 'Array length mismatch');
 
         //     loop {
-    //         if i >= players_len {
-    //             break;
-    //         }
+        //         if i >= players_len {
+        //             break;
+        //         }
 
         //         let player = *players.at(i);
-    //         let commitment = *commitments.at(i);
+        //         let commitment = *commitments.at(i);
 
-        //         let player_info = self.players.read(player);
-    //         assert(player_info.address != contract_address_const::<0>(), 'Invalid player');
+        //         let player_info = self.game_players.read((game_id, player));
+        //         assert(player_info.address != contract_address_const::<0>(), 'Invalid player');
 
-        //         self.role_commitments.write(player, commitment);
-    //         self.emit(RoleCommitmentSubmitted { player, commitment });
+        //         self.game_role_commitments.write((game_id, player), commitment);
+        //         self.emit(RoleCommitmentSubmitted { game_id, player, commitment });
 
         //         i += 1;
-    //     };
+        //     };
 
-        //     self.current_phase.write(3); // Move to NIGHT phase
-    //     self.emit(PhaseChanged { new_phase: 3 });
-    // }
+        //     game_state.current_phase = super::PHASE_NIGHT; // Move to PHASE_NIGHT phase
+        //     self.games.write(game_id, game_state);
+        //     self.emit(PhaseChanged { game_id, new_phase: super::PHASE_NIGHT });
+        // }
+
+        // fn reveal_role(
+        //     ref self: ContractState,
+        //     game_id: felt252,
+        //     player: ContractAddress,
+        //     role: u8,
+        //     nonce: felt252
+        // ) {
+        //     let game_state = self._get_game(game_id);
+        //     assert(game_state.started, 'Game not started');
+            
+        //     // Check valid role
+        //     assert(role == super::ROLE_VILLAGER || role == super::ROLE_MAFIA, 'Invalid role');
+
+        //     // Verify commitment
+        //     let commitment = self.game_role_commitments.read((game_id, player));
+        //     let calculated_commitment = pedersen(pedersen(player.into(), role.into()), nonce);
+        //     assert(commitment == calculated_commitment, 'Invalid commitment');
+
+        //     self.game_revealed_roles.write((game_id, player), role);
+        //     if role == super::ROLE_MAFIA {
+        //         game_state.mafia_count += 1;
+        //     } else {
+        //         game_state.villager_count += 1;
+        //     }
+
+        //     self.games.write(game_id, game_state);
+        //     self.emit(RoleRevealed { game_id, player, role });
+        // }
 
         // fn reveal_role(ref self: ContractState, player: ContractAddress, role: u8, nonce:
     // felt252) {
@@ -469,7 +492,7 @@ mod MafiaGame {
     //             1
     //         } });
     //     } else {
-    //         self.current_phase.write(3); // Back to NIGHT phase
+    //         self.current_phase.write(3); // Back to PHASE_NIGHT phase
     //         self.emit(PhaseChanged { new_phase: 3 });
     //     }
 
@@ -547,28 +570,219 @@ mod MafiaGame {
         //     mafia_count == 0 || mafia_count >= villager_count
         // }
 
-        fn _get_or_create_game(ref self: ContractState, game_id: felt252) -> super::GameState {
+        fn _does_game_exist(self: @ContractState, game_id: felt252) -> bool {
             let game_state = self.games.read(game_id);
-            if game_state.started == false && game_state.ended == false {
-                return super::GameState {
-                    started: false,
-                    ended: false,
-                    current_phase: 0,
-                    player_count: 0,
-                    current_day: 0,
-                    moderator: contract_address_const::<0>(),
-                    is_moderator_chosen: false,
-                    mafia_count: 0,
-                    villager_count: 0,
-                };
-            }
-            game_state
+            game_state.created
         }
 
         fn _get_game(self: @ContractState, game_id: felt252) -> super::GameState {
             let game_state = self.games.read(game_id);
-            assert(game_state.player_count > 0, 'Game does not exist');
             game_state
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::starknet::contract_address_const;
+    use super::MafiaGame;
+    use starknet::ContractAddress;
+    use super::IMafiaGame;
+    // use array::ArrayTrait;
+    // use debug::PrintTrait;
+
+    // Test Constants
+    const GAME_ID: felt252 = 'test_game';
+
+    // Test Players
+    fn setup_players() -> (ContractAddress, ContractAddress, ContractAddress, ContractAddress) {
+        let player1 = contract_address_const::<1>();
+        let player2 = contract_address_const::<2>();
+        let player3 = contract_address_const::<3>();
+        let player4 = contract_address_const::<4>();
+        (player1, player2, player3, player4)
+    }
+
+    #[test]
+    #[available_gas(2000000000)]
+    fn test_create_game() {
+        // Given
+        let mut state = MafiaGame::contract_state_for_testing();
+        
+        // When
+        state.create_game(GAME_ID);
+        
+        // Then
+        let game_state = state.get_game_state( GAME_ID);
+        assert(game_state.created == true, 'Game should be created');
+        assert(game_state.started == false, 'Game should not be started');
+        assert(game_state.player_count == 0, 'Player count should be 0');
+    }
+
+    #[test]
+    #[available_gas(2000000000)]
+    #[should_panic(expected: ('Game already exists', ))]
+    fn test_create_duplicate_game() {
+        // Given
+        let mut state = MafiaGame::contract_state_for_testing();
+        state.create_game(GAME_ID);
+        
+        // When/Then
+        state.create_game(GAME_ID); // Should panic
+    }
+
+    #[test]
+    #[available_gas(2000000000)]
+    fn test_join_game() {
+        // Given
+        let mut state = MafiaGame::contract_state_for_testing();
+        let (player1, _, _, _) = setup_players();
+        state.create_game(GAME_ID);
+        
+        // When
+        state.join_game(
+            player1, GAME_ID, 'Alice', 123
+        );
+        
+        // Then
+        let game_state = state.get_game_state( GAME_ID);
+        assert(game_state.player_count == 1, 'Player count should be 1');
+        
+        let player_info = state.get_player_info( GAME_ID, player1);
+        assert(player_info.name == 'Alice', 'Player name should match');
+        assert(player_info.public_identity_key == 123, 'Public key should match');
+    }
+
+    #[test]
+    #[available_gas(2000000000)]
+    #[should_panic(expected: ('Already joined', ))]
+    fn test_join_game_twice() {
+        // Given
+        let mut state = MafiaGame::contract_state_for_testing();
+        let (player1, _, _, _) = setup_players();
+        state.create_game(GAME_ID);
+        
+        // When
+        state.join_game(
+            player1, GAME_ID, 'Alice', 123
+        );
+        state.join_game(
+            player1, GAME_ID, 'Alice', 123
+        ); // Should panic
+    }
+
+    #[test]
+    #[available_gas(2000000000)]
+    fn test_start_game() {
+        // Given
+        let mut state = MafiaGame::contract_state_for_testing();
+        let (player1, player2, player3, player4) = setup_players();
+        state.create_game(GAME_ID);
+        
+        // Join 4 players
+        state.join_game(
+            player1, GAME_ID, 'Alice', 123
+        );
+        state.join_game(
+            player2, GAME_ID, 'Bob', 456
+        );
+        state.join_game(
+            player3, GAME_ID, 'Charlie', 789
+        );
+        state.join_game(
+            player4, GAME_ID, 'Dave', 101112
+        );
+        
+        // When
+        state.start_game(GAME_ID);
+        
+        // Then
+        let game_state = state.get_game_state( GAME_ID);
+        assert(game_state.started == true, 'Game should be started');
+        assert(game_state.current_phase == super::PHASE_MODERATOR_VOTE, 'Not in moderator vote phase');
+    }
+
+    #[test]
+    #[available_gas(2000000000)]
+    #[should_panic(expected: ('Not enough players', ))]
+    fn test_start_game_not_enough_players() {
+        // Given
+        let mut state = MafiaGame::contract_state_for_testing();
+        let (player1, player2, _, _) = setup_players();
+        state.create_game(GAME_ID);
+        
+        // Join only 2 players
+        state.join_game(
+            player1, GAME_ID, 'Alice', 123
+        );
+        state.join_game(
+            player2, GAME_ID, 'Bob', 456
+        );
+        
+        // When/Then
+        state.start_game(GAME_ID); // Should panic
+    }
+
+    #[test]
+    #[available_gas(2000000000)]
+    fn test_moderator_voting() {
+        // Given
+        let mut state = MafiaGame::contract_state_for_testing();
+        let (player1, player2, player3, player4) = setup_players();
+        
+        // Setup game with 4 players
+        state.create_game(GAME_ID);
+        state.join_game(
+            player1, GAME_ID, 'Alice', 123
+        );
+        state.join_game(
+            player2, GAME_ID, 'Bob', 456
+        );
+        state.join_game(
+            player3, GAME_ID, 'Charlie', 789
+        );
+        state.join_game(
+            player4, GAME_ID, 'Dave', 101112
+        );
+        state.start_game(GAME_ID);
+        
+        // When - all vote for player1
+        state.vote_for_moderator(player1, GAME_ID, player1);
+        state.vote_for_moderator(player2, GAME_ID, player1);
+        state.vote_for_moderator(player3, GAME_ID, player1);
+        state.vote_for_moderator(player4, GAME_ID, player2);
+        
+        state.finalize_moderator_selection(GAME_ID);
+        
+        // Then
+        let game_state = state.get_game_state( GAME_ID);
+        assert(game_state.moderator == player1, 'Player1 should be moderator');
+        assert(game_state.is_moderator_chosen == true, 'Moderator should be chosen');
+        assert(game_state.current_phase == super::PHASE_ROLE_ASSIGNMENT, 'Should be in role assignment');
+    }
+
+    #[test]
+    #[available_gas(2000000000)]
+    fn test_get_players() {
+        // Given
+        let mut state = MafiaGame::contract_state_for_testing();
+        let (player1, player2, _, _) = setup_players();
+        
+        // Setup game with 2 players
+        state.create_game(GAME_ID);
+        state.join_game(
+            player1, GAME_ID, 'Alice', 123
+        );
+        state.join_game(
+            player2, GAME_ID, 'Bob', 456
+        );
+        
+        // When
+        let players = state.get_players( GAME_ID);
+        
+        // Then
+        assert(players.len() == 2, 'Should have 2 players');
+        assert(*players.at(0) == player1, 'First player should be player1');
+        assert(*players.at(1) == player2, 'Second player should be player2');
     }
 }
