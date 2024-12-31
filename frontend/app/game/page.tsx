@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,19 +15,19 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Moon, Sun, Copy, Users, Plus } from "lucide-react";
+import { Moon, Sun, Copy, Users, Plus, Wallet } from 'lucide-react';
 import { motion } from "framer-motion";
 import { RpcProvider, Contract, WalletAccount, CallData } from "starknet";
 import { connect } from "get-starknet";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Header } from "@/components/header";
+import { Toaster, toast } from "react-hot-toast";
+import { contractAddress } from "@/contract/data.json";
 
 export default function GameLobby() {
   const [isCreateGameOpen, setIsCreateGameOpen] = useState(false);
   const [isJoinGameOpen, setIsJoinGameOpen] = useState(false);
   const [gameId, setGameId] = useState("");
-  const [joinError, setJoinError] = useState("");
   const [connection, setConnection] = useState(null);
   const [address, setAddress] = useState("");
   const [mafiaContract, setMafiaContract] = useState(null);
@@ -53,9 +53,11 @@ export default function GameLobby() {
         if (wallet) {
           setConnection(wallet);
           setAddress(wallet.walletProvider.selectedAddress);
+          toast.success("Wallet connected successfully!");
         }
       } catch (error) {
         console.error("Error connecting wallet:", error);
+        toast.error("Failed to connect wallet. Please try again.");
       }
     };
 
@@ -67,87 +69,123 @@ export default function GameLobby() {
       return mafiaContract;
     }
 
-    const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS;
-    const { abi: contractAbi } = await provider.getClassAt(contractAddress);
-    if (contractAbi === undefined) {
-      throw new Error("no abi.");
+    try {
+      const { abi: contractAbi } = await provider.getClassAt(contractAddress);
+      if (contractAbi === undefined) {
+        throw new Error("No ABI found for the contract.");
+      }
+      const contract = new Contract(contractAbi, contractAddress, provider);
+      setMafiaContract(contract);
+      return contract;
+    } catch (error) {
+      console.error("Error getting contract:", error);
+      toast.error("Failed to interact with the game contract. Please try again.");
+      return null;
     }
-    const contract = new Contract(contractAbi, contractAddress, provider);
-    setMafiaContract(contract);
-    return contract;
   };
 
   const doesGameExist = async (gameId: string) => {
     const contract = await getContract();
-    const res = await contract.does_game_exist(gameId);
-    return res;
+    if (!contract) return false;
+    try {
+      const res = await contract.does_game_exist(gameId);
+      return res;
+    } catch (error) {
+      console.error("Error checking if game exists:", error);
+      toast.error("Failed to check if the game exists. Please try again.");
+      return false;
+    }
   };
 
-  const joinGame = async (gameId: string, playerName: string) => {
-    console.log("Joining game... with address: ", address);
-    const call = await connection.execute([
-      {
-        contractAddress: process.env.NEXT_PUBLIC_CONTRACT_ADDRESS,
-        entrypoint: "join_game",
-        calldata: CallData.compile({
-          player: address,
-          game_id: gameId,
-          player_name: playerName,
-        }),
-      },
-    ]);
+  const joinGame = async (gameId, playerName) => {
+    if (!connection) {
+      toast.error("Please connect your wallet first.");
+      return;
+    }
 
-    console.log(call);
+    try {
+      console.log("Joining game... with address: ", address);
+      const call = await connection.execute([
+        {
+          contractAddress: contractAddress,
+          entrypoint: "join_game",
+          calldata: CallData.compile({
+            player: address,
+            game_id: gameId,
+            name: playerName,
+            public_identity_key: calimeroKey,
+          }),
+        },
+      ]);
 
-    await provider.waitForTransaction(call.transaction_hash);
-    router.push(`/${gameId}`);
+      console.log(call);
+      await provider.waitForTransaction(call.transaction_hash);
+      toast.success("Successfully joined the game!");
+      router.push(`/game/${gameId}`);
+    } catch (error) {
+      console.error("Error joining game:", error);
+      toast.error("Failed to join the game. Please try again.");
+    }
   };
 
-  const createAndJoinGame = async () => {
-    console.log("Creating game... with address: ", address);
-    console.log("Game ID: ", gameId);
-    console.log("Player Name: ", playerName);
-    console.log("Calimero Key: ", calimeroKey);
-    console.log(connection)
-    // const call = await connection.execute([
-    //   {
-    //     contractAddress: process.env.NEXT_PUBLIC_CONTRACT_ADDRESS,
-    //     entrypoint: "create_game",
-    //     calldata: CallData.compile({
-    //       game_id: gameId,
-    //     }),
-    //   },
-    //   {
-    //     contractAddress: process.env.NEXT_PUBLIC_CONTRACT_ADDRESS,
-    //     entrypoint: "join_game",
-    //     calldata: CallData.compile({
-    //       player: address,
-    //       game_id: gameId,
-    //       player_name: playerName,
-    //     }),
-    //   },
-    // ]);
+  const createAndJoinGame = async (_gameId) => {
+    if (!connection) {
+      toast.error("Please connect your wallet first.");
+      return;
+    }
 
-    // console.log(call);
-    // await provider.waitForTransaction(call.transaction_hash);
+    try {
+      console.log("Creating game... with address: ", address);
+      console.log("Game ID: ", _gameId);
+      console.log("Player Name: ", playerName);
+      console.log("Calimero Key: ", calimeroKey);
+      const call = await connection.execute([
+        {
+          contractAddress: contractAddress,
+          entrypoint: "create_game",
+          calldata: CallData.compile({
+            game_id: _gameId,
+          }),
+        },
+        {
+          contractAddress: contractAddress,
+          entrypoint: "join_game",
+          calldata: CallData.compile({
+            player: address,
+            game_id: _gameId,
+            name: playerName,
+            public_identity_key: calimeroKey,
+          }),
+        },
+      ]);
+
+      console.log(call);
+      await provider.waitForTransaction(call.transaction_hash);
+      toast.success("Game created and joined successfully!");
+      router.push(`/game/${_gameId}`);
+    } catch (error) {
+      console.error("Error creating and joining game:", error);
+      toast.error("Failed to create and join the game. Please try again.");
+    }
   };
 
   const handleCreateGame = async () => {
     if (!playerName) {
-      setJoinError("Please enter your name");
+      toast.error("Please enter your name");
       return;
     }
 
     if (!calimeroKey) {
-      setJoinError("Please enter your Calimero public identity key");
+      toast.error("Please enter your Calimero public identity key");
       return;
     }
 
     if (useCustomId && !gameId) {
-      setJoinError("Please enter a custom game ID");
+      toast.error("Please enter a custom game ID");
       return;
     }
 
+    let finalGameId = gameId;
     if (!useCustomId) {
       let newGameId;
       let gameExists = true;
@@ -155,27 +193,32 @@ export default function GameLobby() {
         newGameId = `game_${Math.random().toString(36).substr(2, 9)}`;
         gameExists = await doesGameExist(newGameId);
       }
-      setGameId(newGameId);
+      console.log("Generated game ID: ", newGameId);
+      finalGameId = newGameId;
     }
 
-    await createAndJoinGame();
+    await createAndJoinGame(finalGameId);
     setIsCreateGameOpen(false);
   };
 
   const handleJoinGame = async () => {
     if (!playerName) {
-      setJoinError("Please enter your name");
+      toast.error("Please enter your name");
+      return;
+    }
+
+    if (!calimeroKey) {
+      toast.error("Please enter your Calimero public identity key");
       return;
     }
 
     const gameExists = await doesGameExist(gameId);
     if (!gameExists) {
-      setJoinError("Game does not exist");
+      toast.error("Game does not exist");
       return;
     }
 
     await joinGame(gameId, playerName);
-    setJoinError("");
     setIsJoinGameOpen(false);
   };
 
@@ -185,24 +228,23 @@ export default function GameLobby() {
   };
 
   return (
-    <div
-      className={`min-h-screen ${
-        isDarkMode ? "dark bg-black text-white" : "bg-white text-black"
-      }`}
-    >
-      <Header address={address} />
-      <div className="p-8">
+    <div className={`min-h-screen ${isDarkMode ? "dark bg-black text-white" : "bg-white text-black"}`}>
+      <header className="bg-gray-100 dark:bg-gray-800 py-4 px-8 flex justify-between items-center">
+        <h1 className="text-2xl font-bold">Mafia Game</h1>
+        <div className="flex items-center space-x-4">
+          <Button variant="outline" size="sm" onClick={() => toast.success("Wallet connection feature coming soon!")}>
+            <Wallet className="h-4 w-4 mr-2" />
+            {address ? `Connected: ${address.slice(0, 6)}...${address.slice(-4)}` : "Connect Wallet"}
+          </Button>
+          <Button variant="outline" size="icon" onClick={toggleDarkMode}>
+            {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </Button>
+        </div>
+      </header>
+
+      <main className="p-8">
         <div className="max-w-4xl mx-auto">
-          <div className="flex justify-between items-center mb-8">
-            <h1 className="text-4xl font-bold">Game Lobby</h1>
-            <Button variant="outline" size="icon" onClick={toggleDarkMode}>
-              {isDarkMode ? (
-                <Sun className="h-4 w-4" />
-              ) : (
-                <Moon className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
+          {/* <h2 className="text-4xl font-bold mb-8 text-center">Game Lobby</h2> */}
 
           <div className="grid md:grid-cols-2 gap-8">
             <motion.div
@@ -211,9 +253,7 @@ export default function GameLobby() {
               transition={{ duration: 0.5 }}
             >
               <Card
-                className={`hover:shadow-lg transition-shadow cursor-pointer ${
-                  isDarkMode ? "bg-gray-800 text-white" : ""
-                }`}
+                className={`hover:shadow-lg transition-shadow cursor-pointer ${isDarkMode ? "bg-gray-800 text-white" : ""}`}
                 onClick={() => setIsCreateGameOpen(true)}
               >
                 <CardHeader>
@@ -236,9 +276,7 @@ export default function GameLobby() {
               transition={{ duration: 0.5, delay: 0.2 }}
             >
               <Card
-                className={`hover:shadow-lg transition-shadow cursor-pointer ${
-                  isDarkMode ? "bg-gray-800 text-white" : ""
-                }`}
+                className={`hover:shadow-lg transition-shadow cursor-pointer ${isDarkMode ? "bg-gray-800 text-white" : ""}`}
                 onClick={() => setIsJoinGameOpen(true)}
               >
                 <CardHeader>
@@ -258,12 +296,11 @@ export default function GameLobby() {
         </div>
 
         <Dialog open={isCreateGameOpen} onOpenChange={setIsCreateGameOpen}>
-          <DialogContent>
+          <DialogContent className={isDarkMode ? "bg-gray-800 text-white" : ""}>
             <DialogHeader>
               <DialogTitle>Create New Game</DialogTitle>
-              <DialogDescription>
-                Enter your name and Calimero public identity key to create a new
-                game.
+              <DialogDescription className={isDarkMode ? "text-gray-300" : ""}>
+                Enter your details to create a new game.
               </DialogDescription>
             </DialogHeader>
             <Input
@@ -286,7 +323,6 @@ export default function GameLobby() {
               />
               <Label htmlFor="useCustomId">Use custom game ID</Label>
             </div>
-
             {useCustomId && (
               <Input
                 value={gameId}
@@ -295,10 +331,6 @@ export default function GameLobby() {
                 className={`mb-4 ${isDarkMode ? "bg-gray-700 text-white" : ""}`}
               />
             )}
-
-            {joinError && (
-              <p className="text-red-500 text-sm mb-4">{joinError}</p>
-            )}
             <DialogFooter>
               <Button onClick={handleCreateGame}>Create Game</Button>
             </DialogFooter>
@@ -306,41 +338,40 @@ export default function GameLobby() {
         </Dialog>
 
         <Dialog open={isJoinGameOpen} onOpenChange={setIsJoinGameOpen}>
-          <DialogContent>
+          <DialogContent className={isDarkMode ? "bg-gray-800 text-white" : ""}>
             <DialogHeader>
               <DialogTitle>Join Game</DialogTitle>
-              <DialogDescription>
-                Enter the game ID, your name, and Calimero public identity key
-                to join an existing game.
+              <DialogDescription className={isDarkMode ? "text-gray-300" : ""}>
+                Enter the game details to join an existing game.
               </DialogDescription>
             </DialogHeader>
             <Input
               value={gameId}
               onChange={(e) => setGameId(e.target.value)}
               placeholder="Enter game ID"
-              className="mb-4"
+              className={`mb-4 ${isDarkMode ? "bg-gray-700 text-white" : ""}`}
             />
             <Input
               value={playerName}
               onChange={(e) => setPlayerName(e.target.value)}
               placeholder="Enter your name"
-              className="mb-4"
+              className={`mb-4 ${isDarkMode ? "bg-gray-700 text-white" : ""}`}
             />
             <Input
               value={calimeroKey}
               onChange={(e) => setCalimeroKey(e.target.value)}
               placeholder="Enter your Calimero public identity key"
-              className="mb-4"
+              className={`mb-4 ${isDarkMode ? "bg-gray-700 text-white" : ""}`}
             />
-            {joinError && (
-              <p className="text-red-500 text-sm mb-4">{joinError}</p>
-            )}
             <DialogFooter>
               <Button onClick={handleJoinGame}>Join Game</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
+      </main>
+
+      <Toaster position="bottom-center" />
     </div>
   );
 }
+
