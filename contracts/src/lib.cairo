@@ -93,7 +93,11 @@ trait IMafiaGame<TContractState> {
         mafia_2_commitment: felt252,
     );
     fn vote(
-        ref self: TContractState, player: ContractAddress, game_id: felt252, day_id: u32, candidate: ContractAddress
+        ref self: TContractState,
+        player: ContractAddress,
+        game_id: felt252,
+        day_id: u32,
+        candidate: ContractAddress,
     );
     fn end_day(ref self: TContractState, game_id: felt252, day_id: u32);
     fn reveal_role(
@@ -101,36 +105,44 @@ trait IMafiaGame<TContractState> {
         game_id: felt252,
         player: ContractAddress,
         role: u32,
-        nonce: felt252
+        nonce: felt252,
     );
-    fn get_game_state(self: @TContractState, game_id: felt252) -> GameState;    
+    fn get_game_state(self: @TContractState, game_id: felt252) -> GameState;
     fn get_players(self: @TContractState, game_id: felt252) -> Array<ContractAddress>;
     fn get_player_info(
         self: @TContractState, game_id: felt252, player: ContractAddress,
     ) -> PlayerInfo;
     fn get_role_commitment_hash(
-        self: @TContractState, game_id: felt252, player: ContractAddress, role: u32, nonce: felt252
+        self: @TContractState, game_id: felt252, player: ContractAddress, role: u32, nonce: felt252,
     ) -> felt252;
     fn get_mafia_commitment_hash(
-        self: @TContractState, game_id: felt252, mafia: ContractAddress, player: ContractAddress, nonce: felt252
+        self: @TContractState,
+        game_id: felt252,
+        mafia: ContractAddress,
+        player: ContractAddress,
+        nonce: felt252,
     ) -> felt252;
     fn check_winner(self: @TContractState, game_id: felt252) -> u32;
-    fn check_all_active_players_day_voted(self: @TContractState, game_id: felt252, day_id: u32) -> bool;
+    fn check_all_active_players_day_voted(
+        self: @TContractState, game_id: felt252, day_id: u32,
+    ) -> bool;
     fn check_all_players_mod_voted(self: @TContractState, game_id: felt252) -> bool;
     fn check_all_players_reveal_roles(self: @TContractState, game_id: felt252) -> bool;
-    fn verify_mafia_eliminations(self: @TContractState, game_id: felt252, mafia1:ContractAddress, nonce1:felt252, mafia2:ContractAddress, noncd2:felt252) -> bool;
+    fn verify_mafia_eliminations(
+        self: @TContractState,
+        game_id: felt252,
+        mafia1: ContractAddress,
+        nonce1: felt252,
+        mafia2: ContractAddress,
+        noncd2: felt252,
+    ) -> bool;
 }
 
 #[starknet::contract]
 mod MafiaGame {
     use super::IMafiaGame;
-    use core::starknet::{
-        ContractAddress, contract_address_const, get_block_timestamp,
-    };
-    use core::starknet::storage::{
-        StorageMapReadAccess,
-        StorageMapWriteAccess, Map,
-    };
+    use core::starknet::{ContractAddress, contract_address_const, get_block_timestamp};
+    use core::starknet::storage::{StorageMapReadAccess, StorageMapWriteAccess, Map};
     use core::array::ArrayTrait;
     use core::pedersen::pedersen;
 
@@ -342,7 +354,10 @@ mod MafiaGame {
             let game_state = self._get_game(game_id);
             assert(game_state.started, 'Game not started');
             assert(!game_state.ended, 'Game ended');
-            assert(game_state.current_phase == super::PHASE_MODERATOR_VOTE, 'Not moderator voting phase');
+            assert(
+                game_state.current_phase == super::PHASE_MODERATOR_VOTE,
+                'Not moderator voting phase',
+            );
 
             let mut voter = self.game_players.read((game_id, caller));
             assert(voter.address != contract_address_const::<0>(), 'Invalid player');
@@ -368,7 +383,10 @@ mod MafiaGame {
             let mut game_state = self._get_game(game_id);
             assert(game_state.started, 'Game not started');
             assert(!game_state.ended, 'Game ended');
-            assert(game_state.current_phase == super::PHASE_MODERATOR_VOTE, 'Not moderator voting phase');
+            assert(
+                game_state.current_phase == super::PHASE_MODERATOR_VOTE,
+                'Not moderator voting phase',
+            );
             assert(!game_state.is_moderator_chosen, 'Moderator already chosen');
             assert(self.check_all_players_mod_voted(game_id), 'Not all players have voted');
             let chosen_moderator = self._get_winning_moderator(game_id);
@@ -379,7 +397,9 @@ mod MafiaGame {
             game_state.moderator = chosen_moderator;
             game_state.is_moderator_chosen = true;
             game_state.moderator_count = 1;
-            game_state.current_phase = super::PHASE_ROLE_ASSIGNMENT; // Move to PHASE_ROLE_ASSIGNMENT phase
+            game_state
+                .current_phase =
+                    super::PHASE_ROLE_ASSIGNMENT; // Move to PHASE_ROLE_ASSIGNMENT phase
             self.games.write(game_id, game_state);
             self.game_players.write((game_id, chosen_moderator), moderator_info);
             self
@@ -419,7 +439,9 @@ mod MafiaGame {
             all_players_have_voted
         }
 
-        fn check_all_active_players_day_voted(self: @ContractState, game_id: felt252, day_id: u32) -> bool {
+        fn check_all_active_players_day_voted(
+            self: @ContractState, game_id: felt252, day_id: u32,
+        ) -> bool {
             let game_state = self._get_game(game_id);
             let mut i: u32 = 0;
             let mut all_players_have_voted: bool = true;
@@ -485,15 +507,26 @@ mod MafiaGame {
             let mut game_state = self._get_game(game_id);
             assert(game_state.started, 'Game not started');
             assert(!game_state.ended, 'Game ended');
-            assert(game_state.current_phase == super::PHASE_ROLE_ASSIGNMENT, 'Not role assignment phase');
-            assert(mafia_count + villager_count +game_state.moderator_count == game_state.player_count, 'Invalid role count');
+            assert(
+                game_state.current_phase == super::PHASE_ROLE_ASSIGNMENT,
+                'Not role assignment phase',
+            );
+            assert(
+                mafia_count
+                    + villager_count
+                    + game_state.moderator_count == game_state.player_count,
+                'Invalid role count',
+            );
             assert(mafia_count < villager_count, 'Too many mafia players');
             assert(mafia_count >= 1, 'Need at least one mafia');
 
             let mut i: u32 = 0;
             let players_len = players.len();
             assert(players_len == commitments.len(), 'Array length mismatch');
-            assert(players_len + game_state.moderator_count == game_state.player_count, 'Invalid player count');
+            assert(
+                players_len + game_state.moderator_count == game_state.player_count,
+                'Invalid player count',
+            );
 
             game_state.mafia_count = mafia_count;
             game_state.villager_count = villager_count;
@@ -528,21 +561,27 @@ mod MafiaGame {
             game_id: felt252,
             player: ContractAddress,
             role: u32,
-            nonce: felt252
+            nonce: felt252,
         ) {
             let mut game_state = self._get_game(game_id);
             let mut player_info = self.game_players.read((game_id, player));
             assert(game_state.started, 'Game not started');
             assert(!game_state.ended, 'Game ended');
-            
-            assert(game_state.current_phase == super::PHASE_NIGHT || game_state.current_phase == super::PHASE_DAY, 'Not night or vote phase');
+
+            assert(
+                game_state.current_phase == super::PHASE_NIGHT
+                    || game_state.current_phase == super::PHASE_DAY,
+                'Not night or vote phase',
+            );
             // Check valid role
             assert(role == super::ROLE_VILLAGER || role == super::ROLE_MAFIA, 'Invalid role');
             assert(player_info.revealed_role == super::ROLE_UNASSIGNED, 'Role already revealed');
             assert(!player_info.is_active, 'Player not eliminated');
             // Verify commitment
             let commitment = player_info.role_commitment;
-            let calculated_commitment = pedersen(pedersen(player.into(), role.into()), pedersen(game_id, nonce));
+            let calculated_commitment = pedersen(
+                pedersen(player.into(), role.into()), pedersen(game_id, nonce),
+            );
             assert(commitment == calculated_commitment, 'Invalid commitment');
 
             player_info.revealed_role = role;
@@ -563,7 +602,12 @@ mod MafiaGame {
             self.emit(RoleRevealed { game_id, player, role });
         }
 
-        fn vote(ref self: ContractState, player: ContractAddress, game_id: felt252, day_id: u32, candidate: ContractAddress
+        fn vote(
+            ref self: ContractState,
+            player: ContractAddress,
+            game_id: felt252,
+            day_id: u32,
+            candidate: ContractAddress,
         ) {
             let caller = player.clone();
             let game_state = self._get_game(game_id);
@@ -583,9 +627,7 @@ mod MafiaGame {
             assert(candidate_info.address != contract_address_const::<0>(), 'Invalid candidate');
             assert(candidate_info.is_active, 'Votee not active');
 
-            self
-                .game_day_votes
-                .write((game_id, day_id, caller), candidate);
+            self.game_day_votes.write((game_id, day_id, caller), candidate);
             self
                 .game_day_vote_counts
                 .write(
@@ -600,7 +642,10 @@ mod MafiaGame {
             assert(!game_state.ended, 'Game ended');
             assert(game_state.current_phase == super::PHASE_DAY, 'Not voting phase');
             assert(day_id == game_state.current_day, 'Invalid day');
-            assert(self.check_all_active_players_day_voted(game_id, day_id), 'Not all players have voted');
+            assert(
+                self.check_all_active_players_day_voted(game_id, day_id),
+                'Not all players have voted',
+            );
 
             let mut highest_votes: u32 = 0;
             let mut highest_voted_player = contract_address_const::<0>();
@@ -622,14 +667,18 @@ mod MafiaGame {
                 i += 1;
             };
 
-            let mut highest_voted_player_info = self.game_players.read((game_id, highest_voted_player));
+            let mut highest_voted_player_info = self
+                .game_players
+                .read((game_id, highest_voted_player));
             highest_voted_player_info.is_active = false;
-            highest_voted_player_info.elimination_info = super::EliminatedPlayerInfo {
-                reason: super::REASON_VOTED_OUT_BY_VILLAGERS,
-                mafia_remaining: game_state.active_mafia_count,
-                mafia_1_commitment: 0,
-                mafia_2_commitment: 0,
-            };
+            highest_voted_player_info
+                .elimination_info =
+                    super::EliminatedPlayerInfo {
+                        reason: super::REASON_VOTED_OUT_BY_VILLAGERS,
+                        mafia_remaining: game_state.active_mafia_count,
+                        mafia_1_commitment: 0,
+                        mafia_2_commitment: 0,
+                    };
 
             self.game_players.write((game_id, highest_voted_player), highest_voted_player_info);
             game_state.current_phase = super::PHASE_NIGHT; // Move to PHASE_NIGHT phase
@@ -655,12 +704,14 @@ mod MafiaGame {
             assert(mafia_remaining == game_state.active_mafia_count, 'Invalid mafia count');
 
             player_info.is_active = false;
-            player_info.elimination_info = super::EliminatedPlayerInfo {
-                reason: super::REASON_ELIMINATED_BY_MAFIA,
-                mafia_remaining,
-                mafia_1_commitment,
-                mafia_2_commitment,
-            };
+            player_info
+                .elimination_info =
+                    super::EliminatedPlayerInfo {
+                        reason: super::REASON_ELIMINATED_BY_MAFIA,
+                        mafia_remaining,
+                        mafia_1_commitment,
+                        mafia_2_commitment,
+                    };
 
             game_state.current_phase = super::PHASE_DAY; // Move to PHASE_DAY phase
 
@@ -670,19 +721,32 @@ mod MafiaGame {
         }
 
         fn get_role_commitment_hash(
-            self: @ContractState, game_id: felt252, player: ContractAddress, role: u32, nonce: felt252
+            self: @ContractState,
+            game_id: felt252,
+            player: ContractAddress,
+            role: u32,
+            nonce: felt252,
         ) -> felt252 {
             pedersen(pedersen(player.into(), role.into()), pedersen(game_id, nonce))
         }
 
         fn get_mafia_commitment_hash(
-            self: @ContractState, game_id: felt252, mafia: ContractAddress, player: ContractAddress, nonce: felt252
+            self: @ContractState,
+            game_id: felt252,
+            mafia: ContractAddress,
+            player: ContractAddress,
+            nonce: felt252,
         ) -> felt252 {
             pedersen(pedersen(mafia.into(), player.into()), pedersen(game_id, nonce))
         }
 
         fn verify_mafia_eliminations(
-            self: @ContractState, game_id: felt252, mafia1:ContractAddress, nonce1:felt252, mafia2:ContractAddress, noncd2:felt252
+            self: @ContractState,
+            game_id: felt252,
+            mafia1: ContractAddress,
+            nonce1: felt252,
+            mafia2: ContractAddress,
+            noncd2: felt252,
         ) -> bool {
             let game_state = self._get_game(game_id);
             assert(self.check_all_players_reveal_roles(game_id), 'Not all players revealed roles');
@@ -698,11 +762,15 @@ mod MafiaGame {
                 let player_info = self.game_players.read((game_id, player));
                 let player_elimination_info = player_info.elimination_info;
                 if player_elimination_info.reason == super::REASON_ELIMINATED_BY_MAFIA {
-                    let commitment_hash1 = self.get_mafia_commitment_hash(game_id, mafia1, player, nonce1);
-                    let commitment_hash2 = self.get_mafia_commitment_hash(game_id, mafia2, player, noncd2);
+                    let commitment_hash1 = self
+                        .get_mafia_commitment_hash(game_id, mafia1, player, nonce1);
+                    let commitment_hash2 = self
+                        .get_mafia_commitment_hash(game_id, mafia2, player, noncd2);
 
-                    let choice1 = player_elimination_info.mafia_1_commitment == commitment_hash1 && player_elimination_info.mafia_2_commitment == commitment_hash2;
-                    let choice2 = player_elimination_info.mafia_1_commitment == commitment_hash2 && player_elimination_info.mafia_2_commitment == commitment_hash1;
+                    let choice1 = player_elimination_info.mafia_1_commitment == commitment_hash1
+                        && player_elimination_info.mafia_2_commitment == commitment_hash2;
+                    let choice2 = player_elimination_info.mafia_1_commitment == commitment_hash2
+                        && player_elimination_info.mafia_2_commitment == commitment_hash1;
 
                     if !(choice1 || choice2) {
                         mafia_elimination_verified = false;
@@ -766,7 +834,7 @@ mod MafiaGame {
             game_state
         }
 
-        fn _check_winner(self:@ContractState, game_state: super::GameState) -> u32 {
+        fn _check_winner(self: @ContractState, game_state: super::GameState) -> u32 {
             if game_state.active_mafia_count == 0 {
                 super::WINNER_VILLAGERS
             } else if game_state.active_mafia_count > game_state.active_villager_count {
@@ -789,7 +857,16 @@ mod tests {
     const GAME_ID: felt252 = 'test_game';
 
     // Test Players
-    fn setup_players() -> (ContractAddress, ContractAddress, ContractAddress, ContractAddress, ContractAddress, ContractAddress, ContractAddress, ContractAddress) {
+    fn setup_players() -> (
+        ContractAddress,
+        ContractAddress,
+        ContractAddress,
+        ContractAddress,
+        ContractAddress,
+        ContractAddress,
+        ContractAddress,
+        ContractAddress,
+    ) {
         let player1 = contract_address_const::<1>();
         let player2 = contract_address_const::<2>();
         let player3 = contract_address_const::<3>();
@@ -806,12 +883,12 @@ mod tests {
     fn test_create_game() {
         // Given
         let mut state = MafiaGame::contract_state_for_testing();
-        
+
         // When
         state.create_game(GAME_ID);
-        
+
         // Then
-        let game_state = state.get_game_state( GAME_ID);
+        let game_state = state.get_game_state(GAME_ID);
         assert(game_state.created == true, 'Game should be created');
         assert(game_state.started == false, 'Game should not be started');
         assert(game_state.player_count == 0, 'Player count should be 0');
@@ -819,12 +896,12 @@ mod tests {
 
     #[test]
     #[available_gas(2000000000)]
-    #[should_panic(expected: ('Game already exists', ))]
+    #[should_panic(expected: ('Game already exists',))]
     fn test_create_duplicate_game() {
         // Given
         let mut state = MafiaGame::contract_state_for_testing();
         state.create_game(GAME_ID);
-        
+
         // When/Then
         state.create_game(GAME_ID); // Should panic
     }
@@ -836,37 +913,31 @@ mod tests {
         let mut state = MafiaGame::contract_state_for_testing();
         let (player1, _, _, _, _, _, _, _) = setup_players();
         state.create_game(GAME_ID);
-        
+
         // When
-        state.join_game(
-            player1, GAME_ID, 'Alice', 123
-        );
-        
+        state.join_game(player1, GAME_ID, 'Alice', 123);
+
         // Then
-        let game_state = state.get_game_state( GAME_ID);
+        let game_state = state.get_game_state(GAME_ID);
         assert(game_state.player_count == 1, 'Player count should be 1');
-        
-        let player_info = state.get_player_info( GAME_ID, player1);
+
+        let player_info = state.get_player_info(GAME_ID, player1);
         assert(player_info.name == 'Alice', 'Player name should match');
         assert(player_info.public_identity_key == 123, 'Public key should match');
     }
 
     #[test]
     #[available_gas(2000000000)]
-    #[should_panic(expected: ('Already joined', ))]
+    #[should_panic(expected: ('Already joined',))]
     fn test_join_game_twice() {
         // Given
         let mut state = MafiaGame::contract_state_for_testing();
-        let (player1, _, _, _,  _, _, _, _) = setup_players();
+        let (player1, _, _, _, _, _, _, _) = setup_players();
         state.create_game(GAME_ID);
-        
+
         // When
-        state.join_game(
-            player1, GAME_ID, 'Alice', 123
-        );
-        state.join_game(
-            player1, GAME_ID, 'Alice', 123
-        ); // Should panic
+        state.join_game(player1, GAME_ID, 'Alice', 123);
+        state.join_game(player1, GAME_ID, 'Alice', 123); // Should panic
     }
 
     #[test]
@@ -874,49 +945,39 @@ mod tests {
     fn test_start_game() {
         // Given
         let mut state = MafiaGame::contract_state_for_testing();
-        let (player1, player2, player3, player4,  _, _, _, _) = setup_players();
+        let (player1, player2, player3, player4, _, _, _, _) = setup_players();
         state.create_game(GAME_ID);
-        
+
         // Join 4 players
-        state.join_game(
-            player1, GAME_ID, 'Alice', 123
-        );
-        state.join_game(
-            player2, GAME_ID, 'Bob', 456
-        );
-        state.join_game(
-            player3, GAME_ID, 'Charlie', 789
-        );
-        state.join_game(
-            player4, GAME_ID, 'Dave', 101112
-        );
-        
+        state.join_game(player1, GAME_ID, 'Alice', 123);
+        state.join_game(player2, GAME_ID, 'Bob', 456);
+        state.join_game(player3, GAME_ID, 'Charlie', 789);
+        state.join_game(player4, GAME_ID, 'Dave', 101112);
+
         // When
         state.start_game(GAME_ID);
-        
+
         // Then
-        let game_state = state.get_game_state( GAME_ID);
+        let game_state = state.get_game_state(GAME_ID);
         assert(game_state.started == true, 'Game should be started');
-        assert(game_state.current_phase == super::PHASE_MODERATOR_VOTE, 'Not in moderator vote phase');
+        assert(
+            game_state.current_phase == super::PHASE_MODERATOR_VOTE, 'Not in moderator vote phase',
+        );
     }
 
     #[test]
     #[available_gas(2000000000)]
-    #[should_panic(expected: ('Not enough players', ))]
+    #[should_panic(expected: ('Not enough players',))]
     fn test_start_game_not_enough_players() {
         // Given
         let mut state = MafiaGame::contract_state_for_testing();
         let (player1, player2, _, _, _, _, _, _) = setup_players();
         state.create_game(GAME_ID);
-        
+
         // Join only 2 players
-        state.join_game(
-            player1, GAME_ID, 'Alice', 123
-        );
-        state.join_game(
-            player2, GAME_ID, 'Bob', 456
-        );
-        
+        state.join_game(player1, GAME_ID, 'Alice', 123);
+        state.join_game(player2, GAME_ID, 'Bob', 456);
+
         // When/Then
         state.start_game(GAME_ID); // Should panic
     }
@@ -927,36 +988,31 @@ mod tests {
         // Given
         let mut state = MafiaGame::contract_state_for_testing();
         let (player1, player2, player3, player4, _, _, _, _) = setup_players();
-        
+
         // Setup game with 4 players
         state.create_game(GAME_ID);
-        state.join_game(
-            player1, GAME_ID, 'Alice', 123
-        );
-        state.join_game(
-            player2, GAME_ID, 'Bob', 456
-        );
-        state.join_game(
-            player3, GAME_ID, 'Charlie', 789
-        );
-        state.join_game(
-            player4, GAME_ID, 'Dave', 101112
-        );
+        state.join_game(player1, GAME_ID, 'Alice', 123);
+        state.join_game(player2, GAME_ID, 'Bob', 456);
+        state.join_game(player3, GAME_ID, 'Charlie', 789);
+        state.join_game(player4, GAME_ID, 'Dave', 101112);
         state.start_game(GAME_ID);
-        
+
         // When - all vote for player1
         state.cast_moderator_vote(player1, GAME_ID, player1);
         state.cast_moderator_vote(player2, GAME_ID, player1);
         state.cast_moderator_vote(player3, GAME_ID, player1);
         state.cast_moderator_vote(player4, GAME_ID, player2);
-        
+
         state.finalize_moderator_selection(GAME_ID);
-        
+
         // Then
-        let game_state = state.get_game_state( GAME_ID);
+        let game_state = state.get_game_state(GAME_ID);
         assert(game_state.moderator == player1, 'Player1 should be moderator');
         assert(game_state.is_moderator_chosen == true, 'Moderator should be chosen');
-        assert(game_state.current_phase == super::PHASE_ROLE_ASSIGNMENT, 'Should be in role assignment');
+        assert(
+            game_state.current_phase == super::PHASE_ROLE_ASSIGNMENT,
+            'Should be in role assignment',
+        );
     }
 
     #[test]
@@ -965,19 +1021,15 @@ mod tests {
         // Given
         let mut state = MafiaGame::contract_state_for_testing();
         let (player1, player2, _, _, _, _, _, _) = setup_players();
-        
+
         // Setup game with 2 players
         state.create_game(GAME_ID);
-        state.join_game(
-            player1, GAME_ID, 'Alice', 123
-        );
-        state.join_game(
-            player2, GAME_ID, 'Bob', 456
-        );
-        
+        state.join_game(player1, GAME_ID, 'Alice', 123);
+        state.join_game(player2, GAME_ID, 'Bob', 456);
+
         // When
-        let players = state.get_players( GAME_ID);
-        
+        let players = state.get_players(GAME_ID);
+
         // Then
         assert(players.len() == 2, 'Should have 2 players');
         assert(*players.at(0) == player1, 'First player should be player1');
@@ -990,16 +1042,14 @@ mod tests {
         // Given
         let mut state = MafiaGame::contract_state_for_testing();
         let (player1, _, _, _, _, _, _, _) = setup_players();
-        
+
         // Setup game with 1 player
         state.create_game(GAME_ID);
-        state.join_game(
-            player1, GAME_ID, 'Alice', 123
-        );
-        
+        state.join_game(player1, GAME_ID, 'Alice', 123);
+
         // When
-        let player_info = state.get_player_info( GAME_ID, player1);
-        
+        let player_info = state.get_player_info(GAME_ID, player1);
+
         // Then
         assert(player_info.name == 'Alice', 'Player name should match');
         assert(player_info.public_identity_key == 123, 'Public key should match');
@@ -1011,21 +1061,13 @@ mod tests {
         // Given
         let mut state = MafiaGame::contract_state_for_testing();
         let (player1, player2, player3, player4, _, _, _, _) = setup_players();
-        
+
         // Setup game with 4 players
         state.create_game(GAME_ID);
-        state.join_game(
-            player1, GAME_ID, 'Alice', 123
-        );
-        state.join_game(
-            player2, GAME_ID, 'Bob', 456
-        );
-        state.join_game(
-            player3, GAME_ID, 'Charlie', 789
-        );
-        state.join_game(
-            player4, GAME_ID, 'Dave', 101112
-        );
+        state.join_game(player1, GAME_ID, 'Alice', 123);
+        state.join_game(player2, GAME_ID, 'Bob', 456);
+        state.join_game(player3, GAME_ID, 'Charlie', 789);
+        state.join_game(player4, GAME_ID, 'Dave', 101112);
         state.start_game(GAME_ID);
         state.cast_moderator_vote(player1, GAME_ID, player1);
         state.cast_moderator_vote(player2, GAME_ID, player1);
@@ -1033,10 +1075,13 @@ mod tests {
         state.cast_moderator_vote(player4, GAME_ID, player2);
         state.finalize_moderator_selection(GAME_ID);
 
-        let commitment_player2 = state.get_role_commitment_hash(GAME_ID, player2, super::ROLE_MAFIA, 123);
-        let commitment_player3 = state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_VILLAGER, 456);
-        let commitment_player4 = state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789);
-        
+        let commitment_player2 = state
+            .get_role_commitment_hash(GAME_ID, player2, super::ROLE_MAFIA, 123);
+        let commitment_player3 = state
+            .get_role_commitment_hash(GAME_ID, player3, super::ROLE_VILLAGER, 456);
+        let commitment_player4 = state
+            .get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789);
+
         let mut players = ArrayTrait::new();
         players.append(player2);
         players.append(player3);
@@ -1047,18 +1092,12 @@ mod tests {
         commitments.append(commitment_player3);
         commitments.append(commitment_player4);
         // When
-        state.submit_role_commitments(
-            GAME_ID,
-            // [player2, player3, player4],
-            // [commitment_player2, commitment_player3, commitment_player4],
-            players,
-            commitments,
-            1,
-            2
-        );
-        
+        state.submit_role_commitments(GAME_ID, // [player2, player3, player4],
+        // [commitment_player2, commitment_player3, commitment_player4],
+        players, commitments, 1, 2);
+
         // Then
-        let game_state = state.get_game_state( GAME_ID);
+        let game_state = state.get_game_state(GAME_ID);
         assert(game_state.mafia_count == 1, 'Mafia count should be 1');
         assert(game_state.villager_count == 2, 'Villager count should be 2');
         assert(game_state.active_mafia_count == 1, 'Active mafia count should be 1');
@@ -1072,21 +1111,13 @@ mod tests {
         // Given
         let mut state = MafiaGame::contract_state_for_testing();
         let (player1, player2, player3, player4, _, _, _, _) = setup_players();
-        
+
         // Setup game with 4 players
         state.create_game(GAME_ID);
-        state.join_game(
-            player1, GAME_ID, 'Alice', 123
-        );
-        state.join_game(
-            player2, GAME_ID, 'Bob', 456
-        );
-        state.join_game(
-            player3, GAME_ID, 'Charlie', 789
-        );
-        state.join_game(
-            player4, GAME_ID, 'Dave', 101112
-        );
+        state.join_game(player1, GAME_ID, 'Alice', 123);
+        state.join_game(player2, GAME_ID, 'Bob', 456);
+        state.join_game(player3, GAME_ID, 'Charlie', 789);
+        state.join_game(player4, GAME_ID, 'Dave', 101112);
         state.start_game(GAME_ID);
         state.cast_moderator_vote(player1, GAME_ID, player1);
         state.cast_moderator_vote(player2, GAME_ID, player1);
@@ -1100,28 +1131,24 @@ mod tests {
         players.append(player4);
 
         let mut commitments = ArrayTrait::new();
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player2, super::ROLE_MAFIA, 123));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_VILLAGER, 456));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player2, super::ROLE_MAFIA, 123));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_VILLAGER, 456));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789));
 
-        state.submit_role_commitments(
-            GAME_ID,
-            players,
-            commitments,
-            1,
-            2
-        );
+        state.submit_role_commitments(GAME_ID, players, commitments, 1, 2);
 
         state.eliminate_player_by_mafia(GAME_ID, player3, 1, 123, 456);
 
-        
         // When
         state.reveal_role(GAME_ID, player3, super::ROLE_VILLAGER, 456);
         // state.reveal_role(GAME_ID, player3, super::ROLE_VILLAGER, 456);
         // state.reveal_role(GAME_ID, player4, super::ROLE_VILLAGER, 789);
-        
+
         // Then
-        let game_state = state.get_game_state( GAME_ID);
+        let game_state = state.get_game_state(GAME_ID);
         assert(game_state.active_mafia_count == 1, 'Active mafia count should be 0');
         assert(game_state.active_villager_count == 1, 'Active villager should be 1');
         assert(game_state.current_phase == super::PHASE_DAY, 'Should be in day phase');
@@ -1129,26 +1156,18 @@ mod tests {
 
     #[test]
     #[available_gas(2000000000)]
-    #[should_panic(expected: ('Invalid commitment', ))]
+    #[should_panic(expected: ('Invalid commitment',))]
     fn test_reveal_wrong_role() {
         // Given
         let mut state = MafiaGame::contract_state_for_testing();
         let (player1, player2, player3, player4, _, _, _, _) = setup_players();
-        
+
         // Setup game with 4 players
         state.create_game(GAME_ID);
-        state.join_game(
-            player1, GAME_ID, 'Alice', 123
-        );
-        state.join_game(
-            player2, GAME_ID, 'Bob', 456
-        );
-        state.join_game(
-            player3, GAME_ID, 'Charlie', 789
-        );
-        state.join_game(
-            player4, GAME_ID, 'Dave', 101112
-        );
+        state.join_game(player1, GAME_ID, 'Alice', 123);
+        state.join_game(player2, GAME_ID, 'Bob', 456);
+        state.join_game(player3, GAME_ID, 'Charlie', 789);
+        state.join_game(player4, GAME_ID, 'Dave', 101112);
         state.start_game(GAME_ID);
         state.cast_moderator_vote(player1, GAME_ID, player1);
         state.cast_moderator_vote(player2, GAME_ID, player1);
@@ -1162,57 +1181,40 @@ mod tests {
         players.append(player4);
 
         let mut commitments = ArrayTrait::new();
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player2, super::ROLE_MAFIA, 123));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_VILLAGER, 456));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player2, super::ROLE_MAFIA, 123));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_VILLAGER, 456));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789));
 
-        state.submit_role_commitments(
-            GAME_ID,
-            players,
-            commitments,
-            1,
-            2
-        );
-        
+        state.submit_role_commitments(GAME_ID, players, commitments, 1, 2);
+
         state.eliminate_player_by_mafia(GAME_ID, player2, 1, 123, 456);
         state.reveal_role(GAME_ID, player2, super::ROLE_VILLAGER, 123); // Should panic
     }
 
-    // fn check_all_active_players_day_voted(self: @TContractState, game_id: felt252, day_id: u32) -> bool;
+    // fn check_all_active_players_day_voted(self: @TContractState, game_id: felt252, day_id: u32)
+    // -> bool;
     // fn check_all_players_mod_voted(self: @TContractState, game_id: felt252) -> bool;
     #[test]
     #[available_gas(2000000000)]
     fn test_check_all_active_players_day_voted() {
         // Given
         let mut state = MafiaGame::contract_state_for_testing();
-        let (player1, player2, player3, player4, player5, player6, player7, player8) = setup_players();
-        
+        let (player1, player2, player3, player4, player5, player6, player7, player8) =
+            setup_players();
+
         // Setup game with 4 players
         state.create_game(GAME_ID);
-        state.join_game(
-            player1, GAME_ID, 'Alice', 123
-        );
-        state.join_game(
-            player2, GAME_ID, 'Bob', 456
-        );
-        state.join_game(
-            player3, GAME_ID, 'Charlie', 789
-        );
-        state.join_game(
-            player4, GAME_ID, 'Dave', 101112
-        );
-        state.join_game(
-            player5, GAME_ID, 'Eve', 131415
-        );
-        state.join_game(
-            player6, GAME_ID, 'Frank', 161718
-        );
-        state.join_game(
-            player7, GAME_ID, 'Grace', 192021
-        );
-        state.join_game(
-            player8, GAME_ID, 'Hank', 222324
-        );
+        state.join_game(player1, GAME_ID, 'Alice', 123);
+        state.join_game(player2, GAME_ID, 'Bob', 456);
+        state.join_game(player3, GAME_ID, 'Charlie', 789);
+        state.join_game(player4, GAME_ID, 'Dave', 101112);
+        state.join_game(player5, GAME_ID, 'Eve', 131415);
+        state.join_game(player6, GAME_ID, 'Frank', 161718);
+        state.join_game(player7, GAME_ID, 'Grace', 192021);
+        state.join_game(player8, GAME_ID, 'Hank', 222324);
         state.start_game(GAME_ID);
         state.cast_moderator_vote(player1, GAME_ID, player1);
         state.cast_moderator_vote(player2, GAME_ID, player1);
@@ -1234,21 +1236,22 @@ mod tests {
         players.append(player8);
 
         let mut commitments = ArrayTrait::new();
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player2, super::ROLE_MAFIA, 123));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_MAFIA, 456));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player5, super::ROLE_VILLAGER, 101112));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player6, super::ROLE_VILLAGER, 131415));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player7, super::ROLE_VILLAGER, 161718));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player8, super::ROLE_VILLAGER, 192021));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player2, super::ROLE_MAFIA, 123));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_MAFIA, 456));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player5, super::ROLE_VILLAGER, 101112));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player6, super::ROLE_VILLAGER, 131415));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player7, super::ROLE_VILLAGER, 161718));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player8, super::ROLE_VILLAGER, 192021));
 
-        state.submit_role_commitments(
-            GAME_ID,
-            players,
-            commitments,
-            2,
-            5
-        );
+        state.submit_role_commitments(GAME_ID, players, commitments, 2, 5);
 
         let mafia1_commitment = state.get_mafia_commitment_hash(GAME_ID, player2, player8, 123);
         let mafia2_commitment = state.get_mafia_commitment_hash(GAME_ID, player3, player8, 456);
@@ -1266,8 +1269,10 @@ mod tests {
 
         state.reveal_role(GAME_ID, player3, super::ROLE_MAFIA, 456);
 
-        assert(state.check_all_active_players_day_voted(GAME_ID, 0), 'All players should have voted');
-        let game_state = state.get_game_state( GAME_ID);
+        assert(
+            state.check_all_active_players_day_voted(GAME_ID, 0), 'All players should have voted',
+        );
+        let game_state = state.get_game_state(GAME_ID);
         assert(game_state.current_phase == super::PHASE_NIGHT, 'Should be in night phase');
         assert(game_state.current_day == 1, 'Should be day 1');
         assert(game_state.active_mafia_count == 1, 'Active mafia count should be 1');
@@ -1279,34 +1284,19 @@ mod tests {
     fn test_vote() {
         // Given
         let mut state = MafiaGame::contract_state_for_testing();
-        let (player1, player2, player3, player4, player5, player6, player7, player8) = setup_players();
-        
+        let (player1, player2, player3, player4, player5, player6, player7, player8) =
+            setup_players();
+
         // Setup game with 4 players
         state.create_game(GAME_ID);
-        state.join_game(
-            player1, GAME_ID, 'Alice', 123
-        );
-        state.join_game(
-            player2, GAME_ID, 'Bob', 456
-        );
-        state.join_game(
-            player3, GAME_ID, 'Charlie', 789
-        );
-        state.join_game(
-            player4, GAME_ID, 'Dave', 101112
-        );
-        state.join_game(
-            player5, GAME_ID, 'Eve', 131415
-        );
-        state.join_game(
-            player6, GAME_ID, 'Frank', 161718
-        );
-        state.join_game(
-            player7, GAME_ID, 'Grace', 192021
-        );
-        state.join_game(
-            player8, GAME_ID, 'Hank', 222324
-        );
+        state.join_game(player1, GAME_ID, 'Alice', 123);
+        state.join_game(player2, GAME_ID, 'Bob', 456);
+        state.join_game(player3, GAME_ID, 'Charlie', 789);
+        state.join_game(player4, GAME_ID, 'Dave', 101112);
+        state.join_game(player5, GAME_ID, 'Eve', 131415);
+        state.join_game(player6, GAME_ID, 'Frank', 161718);
+        state.join_game(player7, GAME_ID, 'Grace', 192021);
+        state.join_game(player8, GAME_ID, 'Hank', 222324);
         state.start_game(GAME_ID);
         state.cast_moderator_vote(player1, GAME_ID, player1);
         state.cast_moderator_vote(player2, GAME_ID, player1);
@@ -1328,28 +1318,29 @@ mod tests {
         players.append(player8);
 
         let mut commitments = ArrayTrait::new();
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player1, super::ROLE_MAFIA, 123));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_MAFIA, 456));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player5, super::ROLE_VILLAGER, 101112));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player6, super::ROLE_VILLAGER, 131415));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player7, super::ROLE_VILLAGER, 161718));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player8, super::ROLE_VILLAGER, 192021));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player1, super::ROLE_MAFIA, 123));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_MAFIA, 456));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player5, super::ROLE_VILLAGER, 101112));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player6, super::ROLE_VILLAGER, 131415));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player7, super::ROLE_VILLAGER, 161718));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player8, super::ROLE_VILLAGER, 192021));
 
-        state.submit_role_commitments(
-            GAME_ID,
-            players,
-            commitments,
-            2,
-            5
-        );
+        state.submit_role_commitments(GAME_ID, players, commitments, 2, 5);
 
         let mafia1_commitment = state.get_mafia_commitment_hash(GAME_ID, player1, player8, 123);
         let mafia2_commitment = state.get_mafia_commitment_hash(GAME_ID, player3, player8, 456);
 
         state.eliminate_player_by_mafia(GAME_ID, player8, 2, mafia1_commitment, mafia2_commitment);
         state.reveal_role(GAME_ID, player8, super::ROLE_VILLAGER, 192021);
-        
+
         // When
         state.vote(player1, GAME_ID, 0, player7);
         state.vote(player3, GAME_ID, 0, player4);
@@ -1360,9 +1351,9 @@ mod tests {
         state.end_day(GAME_ID, 0);
 
         state.reveal_role(GAME_ID, player3, super::ROLE_MAFIA, 456);
-        
+
         // Then
-        let game_state = state.get_game_state( GAME_ID);
+        let game_state = state.get_game_state(GAME_ID);
         assert(game_state.current_phase == super::PHASE_NIGHT, 'Should be in night phase');
     }
 
@@ -1371,34 +1362,19 @@ mod tests {
     fn test_villager_win() {
         // Given
         let mut state = MafiaGame::contract_state_for_testing();
-        let (player1, player2, player3, player4, player5, player6, player7, player8) = setup_players();
-        
+        let (player1, player2, player3, player4, player5, player6, player7, player8) =
+            setup_players();
+
         // Setup game with 4 players
         state.create_game(GAME_ID);
-        state.join_game(
-            player1, GAME_ID, 'Alice', 123
-        );
-        state.join_game(
-            player2, GAME_ID, 'Bob', 456
-        );
-        state.join_game(
-            player3, GAME_ID, 'Charlie', 789
-        );
-        state.join_game(
-            player4, GAME_ID, 'Dave', 101112
-        );
-        state.join_game(
-            player5, GAME_ID, 'Eve', 131415
-        );
-        state.join_game(
-            player6, GAME_ID, 'Frank', 161718
-        );
-        state.join_game(
-            player7, GAME_ID, 'Grace', 192021
-        );
-        state.join_game(
-            player8, GAME_ID, 'Hank', 222324
-        );
+        state.join_game(player1, GAME_ID, 'Alice', 123);
+        state.join_game(player2, GAME_ID, 'Bob', 456);
+        state.join_game(player3, GAME_ID, 'Charlie', 789);
+        state.join_game(player4, GAME_ID, 'Dave', 101112);
+        state.join_game(player5, GAME_ID, 'Eve', 131415);
+        state.join_game(player6, GAME_ID, 'Frank', 161718);
+        state.join_game(player7, GAME_ID, 'Grace', 192021);
+        state.join_game(player8, GAME_ID, 'Hank', 222324);
         state.start_game(GAME_ID);
         state.cast_moderator_vote(player1, GAME_ID, player1);
         state.cast_moderator_vote(player2, GAME_ID, player1);
@@ -1420,28 +1396,29 @@ mod tests {
         players.append(player8);
 
         let mut commitments = ArrayTrait::new();
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player2, super::ROLE_MAFIA, 123));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_MAFIA, 456));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player5, super::ROLE_VILLAGER, 101112));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player6, super::ROLE_VILLAGER, 131415));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player7, super::ROLE_VILLAGER, 161718));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player8, super::ROLE_VILLAGER, 192021));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player2, super::ROLE_MAFIA, 123));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_MAFIA, 456));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player5, super::ROLE_VILLAGER, 101112));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player6, super::ROLE_VILLAGER, 131415));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player7, super::ROLE_VILLAGER, 161718));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player8, super::ROLE_VILLAGER, 192021));
 
-        state.submit_role_commitments(
-            GAME_ID,
-            players,
-            commitments,
-            2,
-            5
-        );
+        state.submit_role_commitments(GAME_ID, players, commitments, 2, 5);
 
         let mafia1_commitment = state.get_mafia_commitment_hash(GAME_ID, player2, player8, 123);
         let mafia2_commitment = state.get_mafia_commitment_hash(GAME_ID, player3, player8, 456);
 
         state.eliminate_player_by_mafia(GAME_ID, player8, 2, mafia1_commitment, mafia2_commitment);
         state.reveal_role(GAME_ID, player8, super::ROLE_VILLAGER, 192021);
-        
+
         // When
         state.vote(player2, GAME_ID, 0, player7);
         state.vote(player3, GAME_ID, 0, player4);
@@ -1465,9 +1442,9 @@ mod tests {
         state.vote(player6, GAME_ID, 1, player2);
         state.end_day(GAME_ID, 1);
         state.reveal_role(GAME_ID, player2, super::ROLE_MAFIA, 123);
-        
+
         // Then
-        let game_state = state.get_game_state( GAME_ID);
+        let game_state = state.get_game_state(GAME_ID);
         assert(game_state.ended == true, 'Game should have ended');
 
         let winner = state.check_winner(GAME_ID);
@@ -1479,34 +1456,19 @@ mod tests {
     fn test_mafia_win() {
         // Given
         let mut state = MafiaGame::contract_state_for_testing();
-        let (player1, player2, player3, player4, player5, player6, player7, player8) = setup_players();
-        
+        let (player1, player2, player3, player4, player5, player6, player7, player8) =
+            setup_players();
+
         // Setup game with 4 players
         state.create_game(GAME_ID);
-        state.join_game(
-            player1, GAME_ID, 'Alice', 123
-        );
-        state.join_game(
-            player2, GAME_ID, 'Bob', 456
-        );
-        state.join_game(
-            player3, GAME_ID, 'Charlie', 789
-        );
-        state.join_game(
-            player4, GAME_ID, 'Dave', 101112
-        );
-        state.join_game(
-            player5, GAME_ID, 'Eve', 131415
-        );
-        state.join_game(
-            player6, GAME_ID, 'Frank', 161718
-        );
-        state.join_game(
-            player7, GAME_ID, 'Grace', 192021
-        );
-        state.join_game(
-            player8, GAME_ID, 'Hank', 222324
-        );
+        state.join_game(player1, GAME_ID, 'Alice', 123);
+        state.join_game(player2, GAME_ID, 'Bob', 456);
+        state.join_game(player3, GAME_ID, 'Charlie', 789);
+        state.join_game(player4, GAME_ID, 'Dave', 101112);
+        state.join_game(player5, GAME_ID, 'Eve', 131415);
+        state.join_game(player6, GAME_ID, 'Frank', 161718);
+        state.join_game(player7, GAME_ID, 'Grace', 192021);
+        state.join_game(player8, GAME_ID, 'Hank', 222324);
         state.start_game(GAME_ID);
         state.cast_moderator_vote(player1, GAME_ID, player1);
         state.cast_moderator_vote(player2, GAME_ID, player1);
@@ -1528,28 +1490,29 @@ mod tests {
         players.append(player8);
 
         let mut commitments = ArrayTrait::new();
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player2, super::ROLE_MAFIA, 123));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_MAFIA, 456));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player5, super::ROLE_VILLAGER, 101112));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player6, super::ROLE_VILLAGER, 131415));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player7, super::ROLE_VILLAGER, 161718));
-        commitments.append(state.get_role_commitment_hash(GAME_ID, player8, super::ROLE_VILLAGER, 192021));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player2, super::ROLE_MAFIA, 123));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_MAFIA, 456));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player5, super::ROLE_VILLAGER, 101112));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player6, super::ROLE_VILLAGER, 131415));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player7, super::ROLE_VILLAGER, 161718));
+        commitments
+            .append(state.get_role_commitment_hash(GAME_ID, player8, super::ROLE_VILLAGER, 192021));
 
-        state.submit_role_commitments(
-            GAME_ID,
-            players,
-            commitments,
-            2,
-            5
-        );
+        state.submit_role_commitments(GAME_ID, players, commitments, 2, 5);
 
         let mafia1_commitment = state.get_mafia_commitment_hash(GAME_ID, player2, player8, 123);
         let mafia2_commitment = state.get_mafia_commitment_hash(GAME_ID, player3, player8, 456);
 
         state.eliminate_player_by_mafia(GAME_ID, player8, 2, mafia1_commitment, mafia2_commitment);
         state.reveal_role(GAME_ID, player8, super::ROLE_VILLAGER, 192021);
-        
+
         // When
         state.vote(player2, GAME_ID, 0, player7);
         state.vote(player3, GAME_ID, 0, player7);
@@ -1573,13 +1536,12 @@ mod tests {
         state.vote(player5, GAME_ID, 1, player4);
         state.end_day(GAME_ID, 1);
         state.reveal_role(GAME_ID, player4, super::ROLE_VILLAGER, 789);
-        
+
         // Then
-        let game_state = state.get_game_state( GAME_ID);
+        let game_state = state.get_game_state(GAME_ID);
         assert(game_state.ended == true, 'Game should have ended');
 
         let winner = state.check_winner(GAME_ID);
-        assert(winner == super::WINNER_MAFIA, 'Mafia should have won');    
-        
+        assert(winner == super::WINNER_MAFIA, 'Mafia should have won');
     }
 }
