@@ -19,8 +19,6 @@ import { motion } from "framer-motion";
 import { Header, shortenAddress } from "@/components/header";
 import { RpcProvider, Contract, WalletAccount, CallData } from "starknet";
 import { connect } from "get-starknet";
-import { BigNumberish } from "starknet";
-import { join } from "path";
 
 interface Player {
   id: string;
@@ -341,13 +339,13 @@ export default function GameLobby() {
               value={playerName}
               onChange={(e) => setPlayerName(e.target.value)}
               placeholder="Enter your name"
-              className="mb-4"
+              className={`mb-4 ${isDarkMode ? 'bg-gray-700 text-white' : ''}`}
             />
             <Input
               value={calimeroKey}
               onChange={(e) => setCalimeroKey(e.target.value)}
               placeholder="Enter your Calimero public identity key"
-              className="mb-4"
+              className={`mb-4 ${isDarkMode ? 'bg-gray-700 text-white' : ''}`}
             />
             {joinError && (
               <p className="text-red-500 text-sm mb-4">{joinError}</p>

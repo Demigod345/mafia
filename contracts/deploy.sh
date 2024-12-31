@@ -1,35 +1,42 @@
 #!/bin/bash
 
-# Check if a command is provided
-if [ $# -lt 1 ]; then
-  echo "Invalid usage. Please use ./script.sh build or ./script.sh deploy <CLASS_HASH>"
+# Ensure the script exits on any error
+set -e
+
+# Declare and deploy the contract
+echo "Building the contract..."
+scarb build
+
+echo "Declaring the contract..."
+CLASS_HASH=$(starkli declare target/dev/contracts_MafiaGame.contract_class.json --network=sepolia)
+
+
+if [ -z "$CLASS_HASH" ]; then
+  echo "Failed to extract the class hash from the declare output."
   exit 1
 fi
 
-# Parse the first argument
-COMMAND=$1
+echo "Class hash declared: $CLASS_HASH"
 
-# Handle the build command
-if [ "$COMMAND" == "build" ]; then
-  echo "Building the contract..."
-  scarb build
-  starkli declare target/dev/contracts_MafiaGame.contract_class.json
-  exit 0
+# # Deploy the contract using the extracted class hash
+# echo "Deploying the contract with CLASS_HASH: $CLASS_HASH..."
+CONTRACT_ADDRESS=$(starkli deploy "$CLASS_HASH" --network=sepolia)
+
+if [ -z "$CONTRACT_ADDRESS" ]; then
+  echo "Failed to extract the contract address from the deploy output."
+  exit 1
 fi
 
-# Handle the deploy command
-if [ "$COMMAND" == "deploy" ]; then
-  if [ $# -lt 2 ]; then
-    echo "Invalid usage. Please provide the CLASS_HASH. Example: ./script.sh deploy <CLASS_HASH>"
-    exit 1
-  fi
-  
-  CLASS_HASH=$2
-  echo "Deploying the contract with CLASS_HASH: $CLASS_HASH..."
-  starkli deploy "$CLASS_HASH"
-  exit 0
-fi
+echo "Contract successfully deployed at address: $CONTRACT_ADDRESS"
 
-# Handle invalid commands
-echo "Invalid usage. Please use ./script.sh build or ./script.sh deploy <CLASS_HASH>"
-exit 1
+echo "Writing the contract address to the frontend..."
+OUTPUT_FILE="../frontend/contract/address.json"
+cat <<EOF > "$OUTPUT_FILE"
+{
+  "classHash": "$CLASS_HASH",
+  "contractAddress": "$CONTRACT_ADDRESS"
+}
+EOF
+
+echo "Deployment data saved successfully."
+

@@ -136,6 +136,7 @@ trait IMafiaGame<TContractState> {
         mafia2: ContractAddress,
         noncd2: felt252,
     ) -> bool;
+    fn does_game_exist(self: @TContractState, game_id: felt252) -> bool;
 }
 
 #[starknet::contract]
@@ -793,6 +794,10 @@ mod MafiaGame {
                 super::WINNER_UNDEFINED
             }
         }
+
+        fn does_game_exist(self: @ContractState, game_id: felt252) -> bool {
+            self._does_game_exist(game_id)
+        }
     }
 
     #[generate_trait]
@@ -1092,9 +1097,12 @@ mod tests {
         commitments.append(commitment_player3);
         commitments.append(commitment_player4);
         // When
-        state.submit_role_commitments(GAME_ID, // [player2, player3, player4],
-        // [commitment_player2, commitment_player3, commitment_player4],
-        players, commitments, 1, 2);
+        state
+            .submit_role_commitments(
+                GAME_ID, // [player2, player3, player4],
+                // [commitment_player2, commitment_player3, commitment_player4],
+                players, commitments, 1, 2,
+            );
 
         // Then
         let game_state = state.get_game_state(GAME_ID);
