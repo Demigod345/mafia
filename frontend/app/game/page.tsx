@@ -22,7 +22,7 @@ import { connect } from "get-starknet";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Toaster, toast } from "react-hot-toast";
-import { contractAddress } from "@/contract/data.json";
+import contractData from "@/contract/data.json";
 
 export default function GameLobby() {
   const [isCreateGameOpen, setIsCreateGameOpen] = useState(false);
@@ -70,11 +70,11 @@ export default function GameLobby() {
     }
 
     try {
-      const { abi: contractAbi } = await provider.getClassAt(contractAddress);
+      const { abi: contractAbi } = await provider.getClassAt(contractData.contractAddress);
       if (contractAbi === undefined) {
         throw new Error("No ABI found for the contract.");
       }
-      const contract = new Contract(contractAbi, contractAddress, provider);
+      const contract = new Contract(contractAbi, contractData.contractAddress, provider);
       setMafiaContract(contract);
       return contract;
     } catch (error) {
@@ -107,7 +107,7 @@ export default function GameLobby() {
       console.log("Joining game... with address: ", address);
       const call = await connection.execute([
         {
-          contractAddress: contractAddress,
+          contractAddress: contractData.contractAddress,
           entrypoint: "join_game",
           calldata: CallData.compile({
             player: address,
@@ -141,14 +141,14 @@ export default function GameLobby() {
       console.log("Calimero Key: ", calimeroKey);
       const call = await connection.execute([
         {
-          contractAddress: contractAddress,
+          contractAddress: contractData.contractAddress,
           entrypoint: "create_game",
           calldata: CallData.compile({
             game_id: _gameId,
           }),
         },
         {
-          contractAddress: contractAddress,
+          contractAddress: contractData.contractAddress,
           entrypoint: "join_game",
           calldata: CallData.compile({
             player: address,
@@ -370,7 +370,7 @@ export default function GameLobby() {
         </Dialog>
       </main>
 
-      <Toaster position="bottom-center" />
+      <Toaster position="top-center" />
     </div>
   );
 }

@@ -7,8 +7,10 @@ import React, { useState } from "react";
 import { Contact } from "lucide-react";
 import { RpcProvider, Contract, CallData, WalletAccount } from "starknet";
 import { connect } from "get-starknet";
+import { Session, Chatbox } from "@talkjs/react";
 
-const contractAddr = "0x01b61cce629fec9b07fbff4f4fc70fb4a77b7489b4bec381451efd9bff5cd6e6";
+const contractAddr =
+  "0x01b61cce629fec9b07fbff4f4fc70fb4a77b7489b4bec381451efd9bff5cd6e6";
 
 const WalletCounter = () => {
   const [connection, setConnection] = useState(null);
@@ -40,7 +42,6 @@ const WalletCounter = () => {
       const selectedWalletSWO = await connect({
         modalMode: "alwaysAsk",
         modalTheme: "dark",
-        
       });
       const wallet = new WalletAccount(
         { nodeUrl: process.env.NEXT_PUBLIC_STARKNET_RPC_URL },
@@ -118,12 +119,20 @@ const WalletCounter = () => {
         </h1>
 
         {!connection ? (
-          <button
-            onClick={connectWallet}
-            className="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700"
-          >
-            Connect Wallet
-          </button>
+          <div>
+            <Session appId="tQrD36pK" userId="sample_user_alice">
+              <Chatbox
+                conversationId="hello"
+                style={{ width: "100%", height: "500px" }}
+              ></Chatbox>
+            </Session>
+            <button
+              onClick={connectWallet}
+              className="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700"
+            >
+              Connect Wallet
+            </button>
+          </div>
         ) : (
           <div className="space-y-4">
             <p className="text-gray-600">
