@@ -23,6 +23,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Toaster, toast } from "react-hot-toast";
 import contractData from "@/contract/data.json";
+import { twoFeltToString, stringToTwoFelt } from "@/utils/starknet";
 
 export default function GameLobby() {
   const [isCreateGameOpen, setIsCreateGameOpen] = useState(false);
@@ -124,6 +125,7 @@ export default function GameLobby() {
 
       await toast.promise(
         (async () => {
+          const {x, y} = stringToTwoFelt(calimeroKey);
           const call = await connection.execute([
             {
               contractAddress: contractData.contractAddress,
@@ -132,7 +134,8 @@ export default function GameLobby() {
                 player: address,
                 game_id: gameId,
                 name: playerName,
-                public_identity_key: calimeroKey,
+                public_identity_key_1: x,
+                public_identity_key_2: y,
               }),
             },
           ]);
@@ -182,6 +185,7 @@ export default function GameLobby() {
 
       await toast.promise(
         (async () => {
+          const {x, y} = stringToTwoFelt(calimeroKey);
           const call = await connection.execute([
             {
               contractAddress: contractData.contractAddress,
@@ -197,7 +201,8 @@ export default function GameLobby() {
                 player: address,
                 game_id: _gameId,
                 name: playerName,
-                public_identity_key: calimeroKey,
+                public_identity_key_1: x,
+                public_identity_key_2: y,
               }),
             },
           ]);

@@ -27,7 +27,8 @@ type PlayerInfo = {
   name: string;
   address: string;
   is_current_player: boolean;
-  public_identity_key: string;
+  public_identity_key_1: string;
+  public_identity_key_2: string;
   has_voted_moderator: boolean;
   is_moderator: boolean;
   is_active: boolean;
