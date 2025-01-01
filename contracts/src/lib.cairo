@@ -141,8 +141,9 @@ trait IMafiaGame<TContractState> {
 
 #[starknet::contract]
 mod MafiaGame {
+    use starknet::event::EventEmitter;
     use super::IMafiaGame;
-    use core::starknet::{ContractAddress, contract_address_const, get_block_timestamp};
+    use core::starknet::{ContractAddress, contract_address_const};
     use core::starknet::storage::{StorageMapReadAccess, StorageMapWriteAccess, Map};
     use core::array::ArrayTrait;
     use core::pedersen::pedersen;
@@ -161,21 +162,28 @@ mod MafiaGame {
     #[event]
     #[derive(Drop, starknet::Event)]
     enum Event {
+        GameCreated: GameCreated,
         GameStarted: GameStarted,
         PlayerRegistered: PlayerRegistered,
         ModeratorVoteCast: ModeratorVoteCast,
         ModeratorChosen: ModeratorChosen,
         RoleCommitmentSubmitted: RoleCommitmentSubmitted,
+        VoteSubmitted: VoteSubmitted,
         RoleRevealed: RoleRevealed,
         PlayerEliminated: PlayerEliminated,
         PhaseChanged: PhaseChanged,
+        DayChanged: DayChanged,
         GameEnded: GameEnded,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct GameCreated {
+        game_id: felt252,
     }
 
     #[derive(Drop, starknet::Event)]
     struct GameStarted {
         game_id: felt252,
-        timestamp: u64,
         player_count: u32,
     }
 
@@ -183,8 +191,7 @@ mod MafiaGame {
     struct PlayerRegistered {
         game_id: felt252,
         player: ContractAddress,
-        // name: felt252,
-        public_identity_key: felt252,
+        name: felt252,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -192,13 +199,15 @@ mod MafiaGame {
         game_id: felt252,
         voter: ContractAddress,
         candidate: ContractAddress,
+        voter_name: felt252,
+        candidate_name: felt252,
     }
 
     #[derive(Drop, starknet::Event)]
     struct ModeratorChosen {
         game_id: felt252,
         moderator: ContractAddress,
-        // name: felt252,
+        name: felt252,
         vote_count: u32,
     }
 
@@ -206,13 +215,31 @@ mod MafiaGame {
     struct RoleCommitmentSubmitted {
         game_id: felt252,
         player: ContractAddress,
-        commitment: felt252,
+        player_name: felt252,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct VoteSubmitted {
+        game_id: felt252,
+        voter: ContractAddress,
+        candidate: ContractAddress,
+        voter_name: felt252,
+        candidate_name: felt252,
+        day: u32,
+        phase: u32,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct DayChanged {
+        game_id: felt252,
+        new_day: u32,
     }
 
     #[derive(Drop, starknet::Event)]
     struct RoleRevealed {
         game_id: felt252,
         player: ContractAddress,
+        player_name: felt252,
         role: u32,
     }
 
@@ -220,6 +247,8 @@ mod MafiaGame {
     struct PlayerEliminated {
         game_id: felt252,
         player: ContractAddress,
+        player_name: felt252,
+        reason: u32,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -257,6 +286,7 @@ mod MafiaGame {
                 active_villager_count: 0,
             };
             self.games.write(game_id, game_state);
+            self.emit(GameCreated { game_id });
         }
 
         fn join_game(
@@ -297,7 +327,7 @@ mod MafiaGame {
             game_state.player_count += 1;
             self.games.write(game_id, game_state);
 
-            self.emit(PlayerRegistered { game_id, player: caller, public_identity_key });
+            self.emit(PlayerRegistered { game_id, player: caller, name });
         }
 
         fn start_game(ref self: ContractState, game_id: felt252) {
@@ -310,14 +340,7 @@ mod MafiaGame {
             game_state.current_phase = super::PHASE_MODERATOR_VOTE; // PHASE_MODERATOR_VOTE phase
             self.games.write(game_id, game_state);
 
-            self
-                .emit(
-                    GameStarted {
-                        game_id,
-                        timestamp: get_block_timestamp(),
-                        player_count: game_state.player_count,
-                    },
-                );
+            self.emit(GameStarted { game_id, player_count: game_state.player_count });
             self.emit(PhaseChanged { game_id, new_phase: super::PHASE_MODERATOR_VOTE });
         }
 
@@ -377,7 +400,20 @@ mod MafiaGame {
                     self.game_moderator_vote_counts.read((game_id, candidate)) + 1,
                 );
 
-            self.emit(ModeratorVoteCast { game_id, voter: caller, candidate });
+            self
+                .emit(
+                    ModeratorVoteCast {
+                        game_id,
+                        voter: caller,
+                        candidate,
+                        voter_name: voter.name,
+                        candidate_name: candidate_player.name,
+                    },
+                );
+
+            if self.check_all_players_mod_voted(game_id) {
+                self.finalize_moderator_selection(game_id);
+            }
         }
 
         fn finalize_moderator_selection(ref self: ContractState, game_id: felt252) {
@@ -408,6 +444,7 @@ mod MafiaGame {
                     ModeratorChosen {
                         game_id,
                         moderator: chosen_moderator,
+                        name: moderator_info.name,
                         vote_count: self
                             .game_moderator_vote_counts
                             .read((game_id, chosen_moderator)),
@@ -547,7 +584,10 @@ mod MafiaGame {
 
                 player_info.role_commitment = commitment;
                 self.game_players.write((game_id, player), player_info);
-                self.emit(RoleCommitmentSubmitted { game_id, player, commitment });
+                self
+                    .emit(
+                        RoleCommitmentSubmitted { game_id, player, player_name: player_info.name },
+                    );
 
                 i += 1;
             };
@@ -600,7 +640,7 @@ mod MafiaGame {
 
             self.game_players.write((game_id, player), player_info);
             self.games.write(game_id, game_state);
-            self.emit(RoleRevealed { game_id, player, role });
+            self.emit(RoleRevealed { game_id, player, player_name: player_info.name, role });
         }
 
         fn vote(
@@ -635,6 +675,22 @@ mod MafiaGame {
                     (game_id, day_id, candidate),
                     self.game_day_vote_counts.read((game_id, day_id, candidate)) + 1,
                 );
+            self
+                .emit(
+                    VoteSubmitted {
+                        game_id,
+                        voter: caller,
+                        candidate,
+                        voter_name: voter.name,
+                        candidate_name: candidate_info.name,
+                        day: day_id,
+                        phase: super::PHASE_DAY,
+                    },
+                );
+
+            if self.check_all_active_players_day_voted(game_id, day_id) {
+                self.end_day(game_id, day_id);
+            }
         }
 
         fn end_day(ref self: ContractState, game_id: felt252, day_id: u32) {
@@ -685,7 +741,17 @@ mod MafiaGame {
             game_state.current_phase = super::PHASE_NIGHT; // Move to PHASE_NIGHT phase
             game_state.current_day += 1;
             self.games.write(game_id, game_state);
+            self
+                .emit(
+                    PlayerEliminated {
+                        game_id,
+                        player: highest_voted_player,
+                        player_name: highest_voted_player_info.name,
+                        reason: super::REASON_VOTED_OUT_BY_VILLAGERS,
+                    },
+                );
             self.emit(PhaseChanged { game_id, new_phase: super::PHASE_NIGHT });
+            self.emit(DayChanged { game_id, new_day: game_state.current_day });
         }
 
         fn eliminate_player_by_mafia(
@@ -718,7 +784,15 @@ mod MafiaGame {
 
             self.game_players.write((game_id, player), player_info);
             self.games.write(game_id, game_state);
-            self.emit(PlayerEliminated { game_id, player });
+            self
+                .emit(
+                    PlayerEliminated {
+                        game_id,
+                        player,
+                        player_name: player_info.name,
+                        reason: super::REASON_ELIMINATED_BY_MAFIA,
+                    },
+                );
         }
 
         fn get_role_commitment_hash(
@@ -1008,8 +1082,6 @@ mod tests {
         state.cast_moderator_vote(player3, GAME_ID, player1);
         state.cast_moderator_vote(player4, GAME_ID, player2);
 
-        state.finalize_moderator_selection(GAME_ID);
-
         // Then
         let game_state = state.get_game_state(GAME_ID);
         assert(game_state.moderator == player1, 'Player1 should be moderator');
@@ -1078,7 +1150,6 @@ mod tests {
         state.cast_moderator_vote(player2, GAME_ID, player1);
         state.cast_moderator_vote(player3, GAME_ID, player1);
         state.cast_moderator_vote(player4, GAME_ID, player2);
-        state.finalize_moderator_selection(GAME_ID);
 
         let commitment_player2 = state
             .get_role_commitment_hash(GAME_ID, player2, super::ROLE_MAFIA, 123);
@@ -1131,7 +1202,6 @@ mod tests {
         state.cast_moderator_vote(player2, GAME_ID, player1);
         state.cast_moderator_vote(player3, GAME_ID, player1);
         state.cast_moderator_vote(player4, GAME_ID, player2);
-        state.finalize_moderator_selection(GAME_ID);
 
         let mut players = ArrayTrait::new();
         players.append(player2);
@@ -1181,7 +1251,6 @@ mod tests {
         state.cast_moderator_vote(player2, GAME_ID, player1);
         state.cast_moderator_vote(player3, GAME_ID, player1);
         state.cast_moderator_vote(player4, GAME_ID, player2);
-        state.finalize_moderator_selection(GAME_ID);
 
         let mut players = ArrayTrait::new();
         players.append(player2);
@@ -1232,7 +1301,6 @@ mod tests {
         state.cast_moderator_vote(player6, GAME_ID, player1);
         state.cast_moderator_vote(player7, GAME_ID, player1);
         state.cast_moderator_vote(player8, GAME_ID, player1);
-        state.finalize_moderator_selection(GAME_ID);
 
         let mut players = ArrayTrait::new();
         players.append(player1);
@@ -1273,7 +1341,6 @@ mod tests {
         state.vote(player5, GAME_ID, 0, player3);
         state.vote(player6, GAME_ID, 0, player3);
         state.vote(player7, GAME_ID, 0, player3);
-        state.end_day(GAME_ID, 0);
 
         state.reveal_role(GAME_ID, player3, super::ROLE_MAFIA, 456);
 
@@ -1314,7 +1381,6 @@ mod tests {
         state.cast_moderator_vote(player6, GAME_ID, player2);
         state.cast_moderator_vote(player7, GAME_ID, player2);
         state.cast_moderator_vote(player8, GAME_ID, player2);
-        state.finalize_moderator_selection(GAME_ID);
 
         let mut players = ArrayTrait::new();
         players.append(player1);
@@ -1356,7 +1422,6 @@ mod tests {
         state.vote(player5, GAME_ID, 0, player3);
         state.vote(player6, GAME_ID, 0, player3);
         state.vote(player7, GAME_ID, 0, player3);
-        state.end_day(GAME_ID, 0);
 
         state.reveal_role(GAME_ID, player3, super::ROLE_MAFIA, 456);
 
@@ -1392,7 +1457,6 @@ mod tests {
         state.cast_moderator_vote(player6, GAME_ID, player2);
         state.cast_moderator_vote(player7, GAME_ID, player2);
         state.cast_moderator_vote(player8, GAME_ID, player2);
-        state.finalize_moderator_selection(GAME_ID);
 
         let mut players = ArrayTrait::new();
         players.append(player2);
@@ -1434,7 +1498,6 @@ mod tests {
         state.vote(player5, GAME_ID, 0, player3);
         state.vote(player6, GAME_ID, 0, player3);
         state.vote(player7, GAME_ID, 0, player3);
-        state.end_day(GAME_ID, 0);
 
         state.reveal_role(GAME_ID, player3, super::ROLE_MAFIA, 456);
 
@@ -1448,7 +1511,6 @@ mod tests {
         state.vote(player4, GAME_ID, 1, player2);
         state.vote(player5, GAME_ID, 1, player2);
         state.vote(player6, GAME_ID, 1, player2);
-        state.end_day(GAME_ID, 1);
         state.reveal_role(GAME_ID, player2, super::ROLE_MAFIA, 123);
 
         // Then
@@ -1486,7 +1548,6 @@ mod tests {
         state.cast_moderator_vote(player6, GAME_ID, player2);
         state.cast_moderator_vote(player7, GAME_ID, player2);
         state.cast_moderator_vote(player8, GAME_ID, player2);
-        state.finalize_moderator_selection(GAME_ID);
 
         let mut players = ArrayTrait::new();
         players.append(player2);
@@ -1528,7 +1589,6 @@ mod tests {
         state.vote(player5, GAME_ID, 0, player7);
         state.vote(player6, GAME_ID, 0, player3);
         state.vote(player7, GAME_ID, 0, player3);
-        state.end_day(GAME_ID, 0);
 
         state.reveal_role(GAME_ID, player7, super::ROLE_VILLAGER, 161718);
 
@@ -1542,7 +1602,6 @@ mod tests {
         state.vote(player3, GAME_ID, 1, player4);
         state.vote(player4, GAME_ID, 1, player5);
         state.vote(player5, GAME_ID, 1, player4);
-        state.end_day(GAME_ID, 1);
         state.reveal_role(GAME_ID, player4, super::ROLE_VILLAGER, 789);
 
         // Then

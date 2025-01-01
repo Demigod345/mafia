@@ -30,7 +30,7 @@ fi
 echo "Contract successfully deployed at address: $CONTRACT_ADDRESS"
 
 echo "Writing the contract address to the frontend..."
-OUTPUT_FILE="../frontend/contract/address.json"
+OUTPUT_FILE="../frontend/contract/data.json"
 cat <<EOF > "$OUTPUT_FILE"
 {
   "classHash": "$CLASS_HASH",
