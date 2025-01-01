@@ -15,9 +15,9 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Moon, Sun, Copy, Users, Plus, Wallet } from 'lucide-react';
+import { Moon, Sun, Copy, Users, Plus, Wallet } from "lucide-react";
 import { motion } from "framer-motion";
-import { RpcProvider, Contract, WalletAccount, CallData } from "starknet";
+import { RpcProvider, Contract, WalletAccount, CallData, shortString } from "starknet";
 import { connect } from "get-starknet";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -44,17 +44,25 @@ export default function GameLobby() {
   useEffect(() => {
     const handleConnectWallet = async () => {
       try {
-        const selectedWalletSWO = await connect({ modalTheme: "dark" });
-        const wallet = await new WalletAccount(
-          { nodeUrl: process.env.NEXT_PUBLIC_STARKNET_RPC_URL },
-          selectedWalletSWO
-        );
+        await toast.promise(
+          (async () => {
+            const selectedWalletSWO = await connect({ modalTheme: "dark" });
+            const wallet = await new WalletAccount(
+              { nodeUrl: process.env.NEXT_PUBLIC_STARKNET_RPC_URL },
+              selectedWalletSWO
+            );
 
-        if (wallet) {
-          setConnection(wallet);
-          setAddress(wallet.walletProvider.selectedAddress);
-          toast.success("Wallet connected successfully!");
-        }
+            if (wallet) {
+              setConnection(wallet);
+              setAddress(wallet.walletProvider.selectedAddress);
+            }
+          })(),
+          {
+            loading: "Connecting wallet...",
+            success: "Wallet connected successfully!",
+            error: "Failed to connect wallet. Please try again.",
+          }
+        );
       } catch (error) {
         console.error("Error connecting wallet:", error);
         toast.error("Failed to connect wallet. Please try again.");
@@ -70,16 +78,24 @@ export default function GameLobby() {
     }
 
     try {
-      const { abi: contractAbi } = await provider.getClassAt(contractData.contractAddress);
+      const { abi: contractAbi } = await provider.getClassAt(
+        contractData.contractAddress
+      );
       if (contractAbi === undefined) {
         throw new Error("No ABI found for the contract.");
       }
-      const contract = new Contract(contractAbi, contractData.contractAddress, provider);
+      const contract = new Contract(
+        contractAbi,
+        contractData.contractAddress,
+        provider
+      );
       setMafiaContract(contract);
       return contract;
     } catch (error) {
       console.error("Error getting contract:", error);
-      toast.error("Failed to interact with the game contract. Please try again.");
+      toast.error(
+        "Failed to interact with the game contract. Please try again."
+      );
       return null;
     }
   };
@@ -105,22 +121,46 @@ export default function GameLobby() {
 
     try {
       console.log("Joining game... with address: ", address);
-      const call = await connection.execute([
-        {
-          contractAddress: contractData.contractAddress,
-          entrypoint: "join_game",
-          calldata: CallData.compile({
-            player: address,
-            game_id: gameId,
-            name: playerName,
-            public_identity_key: calimeroKey,
-          }),
-        },
-      ]);
 
-      console.log(call);
-      await provider.waitForTransaction(call.transaction_hash);
-      toast.success("Successfully joined the game!");
+      await toast.promise(
+        (async () => {
+          const call = await connection.execute([
+            {
+              contractAddress: contractData.contractAddress,
+              entrypoint: "join_game",
+              calldata: CallData.compile({
+                player: address,
+                game_id: gameId,
+                name: playerName,
+                public_identity_key: calimeroKey,
+              }),
+            },
+          ]);
+          const response = await fetch("/api/events", {
+            method: "POST",
+            body: JSON.stringify({
+              game_id: gameId,
+              transaction_hash: call.transaction_hash,
+            }),
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
+
+          if (!response.ok) {
+            toast.error("Failed to update the chat server. Please try again.");
+          }
+        })(),
+        {
+          loading: "Joining game...",
+          success: "Successfully joined the game!",
+          error: "Failed to join the game. Please try again.",
+        }
+      );
+
+      // console.log(call);
+      // await provider.waitForTransaction(call.transaction_hash);
+      // toast.success("Successfully joined the game!");
       router.push(`/game/${gameId}`);
     } catch (error) {
       console.error("Error joining game:", error);
@@ -139,29 +179,50 @@ export default function GameLobby() {
       console.log("Game ID: ", _gameId);
       console.log("Player Name: ", playerName);
       console.log("Calimero Key: ", calimeroKey);
-      const call = await connection.execute([
-        {
-          contractAddress: contractData.contractAddress,
-          entrypoint: "create_game",
-          calldata: CallData.compile({
-            game_id: _gameId,
-          }),
-        },
-        {
-          contractAddress: contractData.contractAddress,
-          entrypoint: "join_game",
-          calldata: CallData.compile({
-            player: address,
-            game_id: _gameId,
-            name: playerName,
-            public_identity_key: calimeroKey,
-          }),
-        },
-      ]);
 
-      console.log(call);
-      await provider.waitForTransaction(call.transaction_hash);
-      toast.success("Game created and joined successfully!");
+      await toast.promise(
+        (async () => {
+          const call = await connection.execute([
+            {
+              contractAddress: contractData.contractAddress,
+              entrypoint: "create_game",
+              calldata: CallData.compile({
+                game_id: _gameId,
+              }),
+            },
+            {
+              contractAddress: contractData.contractAddress,
+              entrypoint: "join_game",
+              calldata: CallData.compile({
+                player: address,
+                game_id: _gameId,
+                name: playerName,
+                public_identity_key: calimeroKey,
+              }),
+            },
+          ]);
+          const response = await fetch("/api/events", {
+            method: "POST",
+            body: JSON.stringify({
+              game_id: gameId,
+              transaction_hash: call.transaction_hash,
+            }),
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
+
+          if (!response.ok) {
+            toast.error("Failed to update the chat server. Please try again.");
+          }
+        })(),
+        {
+          loading: "Creating and Joining game...",
+          success: "Successfully created and joined the game!",
+          error: "There is some error. Please try again.",
+        }
+      );
+
       router.push(`/game/${_gameId}`);
     } catch (error) {
       console.error("Error creating and joining game:", error);
@@ -228,16 +289,32 @@ export default function GameLobby() {
   };
 
   return (
-    <div className={`min-h-screen ${isDarkMode ? "dark bg-black text-white" : "bg-white text-black"}`}>
+    <div
+      className={`min-h-screen ${
+        isDarkMode ? "dark bg-black text-white" : "bg-white text-black"
+      }`}
+    >
       <header className="bg-gray-100 dark:bg-gray-800 py-4 px-8 flex justify-between items-center">
         <h1 className="text-2xl font-bold">Mafia Game</h1>
         <div className="flex items-center space-x-4">
-          <Button variant="outline" size="sm" onClick={() => toast.success("Wallet connection feature coming soon!")}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              toast.success("Wallet connection feature coming soon!")
+            }
+          >
             <Wallet className="h-4 w-4 mr-2" />
-            {address ? `Connected: ${address.slice(0, 6)}...${address.slice(-4)}` : "Connect Wallet"}
+            {address
+              ? `Connected: ${address.slice(0, 6)}...${address.slice(-4)}`
+              : "Connect Wallet"}
           </Button>
           <Button variant="outline" size="icon" onClick={toggleDarkMode}>
-            {isDarkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            {isDarkMode ? (
+              <Sun className="h-4 w-4" />
+            ) : (
+              <Moon className="h-4 w-4" />
+            )}
           </Button>
         </div>
       </header>
@@ -253,7 +330,9 @@ export default function GameLobby() {
               transition={{ duration: 0.5 }}
             >
               <Card
-                className={`hover:shadow-lg transition-shadow cursor-pointer ${isDarkMode ? "bg-gray-800 text-white" : ""}`}
+                className={`hover:shadow-lg transition-shadow cursor-pointer ${
+                  isDarkMode ? "bg-gray-800 text-white" : ""
+                }`}
                 onClick={() => setIsCreateGameOpen(true)}
               >
                 <CardHeader>
@@ -276,7 +355,9 @@ export default function GameLobby() {
               transition={{ duration: 0.5, delay: 0.2 }}
             >
               <Card
-                className={`hover:shadow-lg transition-shadow cursor-pointer ${isDarkMode ? "bg-gray-800 text-white" : ""}`}
+                className={`hover:shadow-lg transition-shadow cursor-pointer ${
+                  isDarkMode ? "bg-gray-800 text-white" : ""
+                }`}
                 onClick={() => setIsJoinGameOpen(true)}
               >
                 <CardHeader>
@@ -311,7 +392,22 @@ export default function GameLobby() {
             />
             <Input
               value={calimeroKey}
-              onChange={(e) => setCalimeroKey(e.target.value)}
+              onChange={(e) => {
+                // const value = e.target.value;
+                // const arrStr = shortString.splitLongString(value);
+                // const arrFelt = arrStr.map((str) => {
+                //   return shortString.encodeShortString(str);
+                // })
+                // console.log("arrStr + " + arrStr);
+                // console.log("arrFelt + " + arrFelt);
+                // const num1 = arrFelt[0];
+                // const num2 = arrFelt[1];
+
+                // const str1 = shortString.decodeShortString(num1);
+                // const str2 = shortString.decodeShortString(num2);
+                // console.log("joining "+  str1 + str2);
+                setCalimeroKey(e.target.value);
+              }}
               placeholder="Enter your Calimero public identity key"
               className={`mb-4 ${isDarkMode ? "bg-gray-700 text-white" : ""}`}
             />
@@ -374,4 +470,3 @@ export default function GameLobby() {
     </div>
   );
 }
-

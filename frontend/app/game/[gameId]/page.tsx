@@ -1,10 +1,12 @@
+// @ts-nocheck
+
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Moon, Sun, Users, Play, Check } from 'lucide-react';
+import { Moon, Sun, Users, Play, Check } from "lucide-react";
 import { Chatbox, Session } from "@talkjs/react";
 import Talk from "talkjs";
 import { useParams } from "next/navigation";
@@ -98,7 +100,9 @@ export default function GameArea() {
   const [connection, setConnection] = useState<WalletAccount | null>(null);
   const [address, setAddress] = useState("");
   const [mafiaContract, setMafiaContract] = useState<Contract | null>(null);
-  const [selectedModerator, setSelectedModerator] = useState<string | null>(null);
+  const [selectedModerator, setSelectedModerator] = useState<string | null>(
+    null
+  );
 
   const provider = new RpcProvider({
     nodeUrl: process.env.NEXT_PUBLIC_STARKNET_RPC_URL,
@@ -158,10 +162,16 @@ export default function GameArea() {
         let currentPlayerFound = false;
         const playersInfo = await Promise.all(
           playerAddresses.map(async (playerAddress) => {
-            const playerInfo = await contract.get_player_info(gameId, playerAddress);
+            const playerInfo = await contract.get_player_info(
+              gameId,
+              playerAddress
+            );
             playerInfo.address = num.toHex(playerAddress);
             playerInfo.name = shortString.decodeShortString(playerInfo.name);
-            if (playerInfo.address.toString().toLowerCase() === address.toString().toLowerCase()) {
+            if (
+              playerInfo.address.toString().toLowerCase() ===
+              address.toString().toLowerCase()
+            ) {
               playerInfo.is_current_player = true;
               currentPlayerFound = true;
             }
@@ -185,11 +195,17 @@ export default function GameArea() {
     }
 
     try {
-      const { abi: contractAbi } = await provider.getClassAt(contractData.contractAddress);
+      const { abi: contractAbi } = await provider.getClassAt(
+        contractData.contractAddress
+      );
       if (contractAbi === undefined) {
         throw new Error("No ABI found for the contract.");
       }
-      const contract = new Contract(contractAbi, contractData.contractAddress, provider);
+      const contract = new Contract(
+        contractAbi,
+        contractData.contractAddress,
+        provider
+      );
       setMafiaContract(contract);
       return contract;
     } catch (error) {
@@ -214,19 +230,33 @@ export default function GameArea() {
               }),
             },
           ]);
-    
-          console.log(call);
-          await provider.waitForTransaction(call.transaction_hash);
-          await fetchGameData();
+
+          const response = await fetch("/api/events", {
+            method: "POST",
+            body: JSON.stringify({
+              game_id: gameId,
+              transaction_hash: call.transaction_hash,
+            }),
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
+
+          if (!response.ok) {
+            toast.error("Failed to update the chat server. Please try again.");
+          }
+          // await fetchGameData();
         })(),
         {
-          loading: 'Starting the game...',
-          success: 'Game started successfully!',
-          error: 'Failed to start the game. Please try again.',
+          loading: "Starting the game...",
+          success: "Game started successfully!",
+          error: "Failed to start the game. Please try again.",
         }
       );
     } else {
-      toast.error("Not enough players to start the game or wallet not connected");
+      toast.error(
+        "Not enough players to start the game or wallet not connected"
+      );
     }
   };
 
@@ -246,19 +276,30 @@ export default function GameArea() {
               }),
             },
           ]);
-    
-          console.log(call);
-          const txReceipt = await provider.waitForTransaction(call.transaction_hash);
-          console.log("Transaction receipt:", txReceipt);
-          await fetchGameData();
-          await fetchPlayers();
+
+          const response = await fetch("/api/events", {
+            method: "POST",
+            body: JSON.stringify({
+              game_id: gameId,
+              transaction_hash: call.transaction_hash,
+            }),
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
+
+          if (!response.ok) {
+            toast.error("Failed to update the chat server. Please try again.");
+          }
         })(),
         {
-          loading: 'Submitting your vote...',
-          success: 'Vote submitted successfully!',
-          error: 'Failed to submit your vote. Please try again.',
+          loading: "Submitting your vote...",
+          success: "Vote submitted successfully!",
+          error: "Failed to submit your vote. Please try again.",
         }
       );
+      await fetchGameData();
+      await fetchPlayers();
     } else {
       toast.error("Wallet not connected. Please connect your wallet to vote.");
     }
@@ -289,10 +330,14 @@ export default function GameArea() {
   };
 
   return (
-    <div className={`min-h-screen ${isDarkMode ? "dark bg-gray-900 text-white" : "bg-gray-100"}`}>
+    <div
+      className={`min-h-screen ${
+        isDarkMode ? "dark bg-gray-900 text-white" : "bg-gray-100"
+      }`}
+    >
       <header className="bg-white dark:bg-gray-800 shadow-md">
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-          <motion.h1 
+          <motion.h1
             className="text-3xl font-bold"
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -336,7 +381,7 @@ export default function GameArea() {
               <h2 className="text-xl font-semibold mb-4">
                 Players ({players.length}/4)
               </h2>
-              <motion.div 
+              <motion.div
                 className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -369,17 +414,23 @@ export default function GameArea() {
                           You
                         </span>
                       )}
-                      {gameState && Number(gameState.current_phase) === 2 && !player.is_current_player && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="ml-auto"
-                          onClick={() => handleModeratorVote(player.address)}
-                          disabled={selectedModerator !== null}
-                        >
-                          {selectedModerator === player.address ? <Check className="w-4 h-4" /> : 'Vote'}
-                        </Button>
-                      )}
+                      {gameState &&
+                        Number(gameState.current_phase) === 2 &&
+                        !player.is_current_player && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="ml-auto"
+                            onClick={() => handleModeratorVote(player.address)}
+                            disabled={selectedModerator !== null}
+                          >
+                            {selectedModerator === player.address ? (
+                              <Check className="w-4 h-4" />
+                            ) : (
+                              "Vote"
+                            )}
+                          </Button>
+                        )}
                     </motion.div>
                   ))}
                 </AnimatePresence>
@@ -407,7 +458,11 @@ export default function GameArea() {
             <CardHeader>
               <CardTitle>Chat</CardTitle>
             </CardHeader>
-            <Chat name={players.find(p => p.is_current_player)?.name || "Anonymous"} />
+            <Chat
+              name={
+                players.find((p) => p.is_current_player)?.name || "Anonymous"
+              }
+            />
           </Card>
         </div>
       </main>
@@ -415,4 +470,3 @@ export default function GameArea() {
     </div>
   );
 }
-

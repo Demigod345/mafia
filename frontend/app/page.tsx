@@ -44,7 +44,7 @@ export default function MafiaGameLanding() {
         setAddress(wallet.address);
       }
 
-      router.push('/lobby');
+      router.push('/game');
     } catch (error) {
       console.error("Error connecting wallet:", error);
     }

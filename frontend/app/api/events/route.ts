@@ -112,6 +112,25 @@ type Event =
     }
   | { "contracts::MafiaGame::GameEnded": { game_id: bigint; winner: number } };
 
+function getPhaseText(phase: number): string {
+  switch (phase) {
+    case 0:
+      return "Game not created";
+    case 1:
+      return "Game setup";
+    case 2:
+      return "Moderator vote";
+    case 3:
+      return "Role assignment";
+    case 4:
+      return "Night";
+    case 5:
+      return "Day";
+    default:
+      return "Unknown";
+  }
+}
+
 function getMessages(
   events: Event[]
 ): { text: string; type: "SystemMessage" }[] {
@@ -209,7 +228,7 @@ function getMessages(
           });
         } else if ("contracts::MafiaGame::PhaseChanged" == key) {
           const { new_phase } = event["contracts::MafiaGame::PhaseChanged"];
-          const phaseText = Number(new_phase) === 0 ? "Discussion" : "Voting";
+          const phaseText = getPhaseText(Number(new_phase));
           messages.push({
             text: `⏳ *Phase changed:* Now it's the _${phaseText} phase_.`,
             type: "SystemMessage",
@@ -260,7 +279,7 @@ async function updateConvertion(gameId) {
 }
 
 async function sendMessages(messages, gameId) {
-  try {    
+  try {
     await updateConvertion(gameId);
     const response = await fetch(
       `https://api.talkjs.com/v1/tQrD36pK/conversations/${gameId}/messages`,

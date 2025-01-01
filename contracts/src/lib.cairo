@@ -4,7 +4,8 @@ use core::starknet::ContractAddress;
 struct PlayerInfo {
     name: felt252,
     address: ContractAddress,
-    public_identity_key: felt252,
+    public_identity_key_1: felt252,
+    public_identity_key_2: felt252,
     has_voted_moderator: bool,
     is_moderator: bool,
     is_active: bool,
@@ -66,7 +67,8 @@ trait IMafiaGame<TContractState> {
         player: ContractAddress,
         game_id: felt252,
         name: felt252,
-        public_identity_key: felt252,
+        public_identity_key_1: felt252,
+        public_identity_key_2: felt252,
     );
     fn start_game(ref self: TContractState, game_id: felt252);
     fn cast_moderator_vote(
@@ -294,7 +296,8 @@ mod MafiaGame {
             player: ContractAddress,
             game_id: felt252,
             name: felt252,
-            public_identity_key: felt252,
+            public_identity_key_1: felt252,
+            public_identity_key_2: felt252,
         ) {
             assert(self._does_game_exist(game_id), 'Game does not exist');
             let mut game_state = self._get_game(game_id);
@@ -307,7 +310,8 @@ mod MafiaGame {
             let player_info = super::PlayerInfo {
                 name,
                 address: caller,
-                public_identity_key: public_identity_key,
+                public_identity_key_1: public_identity_key_1,
+                public_identity_key_2: public_identity_key_2,
                 has_voted_moderator: false,
                 is_moderator: false,
                 is_active: true,
@@ -994,7 +998,7 @@ mod tests {
         state.create_game(GAME_ID);
 
         // When
-        state.join_game(player1, GAME_ID, 'Alice', 123);
+        state.join_game(player1, GAME_ID, 'Alice', 123, 123);
 
         // Then
         let game_state = state.get_game_state(GAME_ID);
@@ -1002,7 +1006,10 @@ mod tests {
 
         let player_info = state.get_player_info(GAME_ID, player1);
         assert(player_info.name == 'Alice', 'Player name should match');
-        assert(player_info.public_identity_key == 123, 'Public key should match');
+        assert(
+            player_info.public_identity_key_1 == 123 && player_info.public_identity_key_2 == 123,
+            'Public key should match',
+        );
     }
 
     #[test]
@@ -1015,8 +1022,8 @@ mod tests {
         state.create_game(GAME_ID);
 
         // When
-        state.join_game(player1, GAME_ID, 'Alice', 123);
-        state.join_game(player1, GAME_ID, 'Alice', 123); // Should panic
+        state.join_game(player1, GAME_ID, 'Alice', 123, 123);
+        state.join_game(player1, GAME_ID, 'Alice', 123, 123); // Should panic
     }
 
     #[test]
@@ -1028,10 +1035,10 @@ mod tests {
         state.create_game(GAME_ID);
 
         // Join 4 players
-        state.join_game(player1, GAME_ID, 'Alice', 123);
-        state.join_game(player2, GAME_ID, 'Bob', 456);
-        state.join_game(player3, GAME_ID, 'Charlie', 789);
-        state.join_game(player4, GAME_ID, 'Dave', 101112);
+        state.join_game(player1, GAME_ID, 'Alice', 123, 123);
+        state.join_game(player2, GAME_ID, 'Bob', 456, 456);
+        state.join_game(player3, GAME_ID, 'Charlie', 789, 789);
+        state.join_game(player4, GAME_ID, 'Dave', 101112, 101112);
 
         // When
         state.start_game(GAME_ID);
@@ -1054,8 +1061,8 @@ mod tests {
         state.create_game(GAME_ID);
 
         // Join only 2 players
-        state.join_game(player1, GAME_ID, 'Alice', 123);
-        state.join_game(player2, GAME_ID, 'Bob', 456);
+        state.join_game(player1, GAME_ID, 'Alice', 123, 123);
+        state.join_game(player2, GAME_ID, 'Bob', 456, 456);
 
         // When/Then
         state.start_game(GAME_ID); // Should panic
@@ -1070,10 +1077,10 @@ mod tests {
 
         // Setup game with 4 players
         state.create_game(GAME_ID);
-        state.join_game(player1, GAME_ID, 'Alice', 123);
-        state.join_game(player2, GAME_ID, 'Bob', 456);
-        state.join_game(player3, GAME_ID, 'Charlie', 789);
-        state.join_game(player4, GAME_ID, 'Dave', 101112);
+        state.join_game(player1, GAME_ID, 'Alice', 123, 123);
+        state.join_game(player2, GAME_ID, 'Bob', 456, 456);
+        state.join_game(player3, GAME_ID, 'Charlie', 789, 789);
+        state.join_game(player4, GAME_ID, 'Dave', 101112, 101112);
         state.start_game(GAME_ID);
 
         // When - all vote for player1
@@ -1101,8 +1108,8 @@ mod tests {
 
         // Setup game with 2 players
         state.create_game(GAME_ID);
-        state.join_game(player1, GAME_ID, 'Alice', 123);
-        state.join_game(player2, GAME_ID, 'Bob', 456);
+        state.join_game(player1, GAME_ID, 'Alice', 123, 123);
+        state.join_game(player2, GAME_ID, 'Bob', 456, 456);
 
         // When
         let players = state.get_players(GAME_ID);
@@ -1122,14 +1129,17 @@ mod tests {
 
         // Setup game with 1 player
         state.create_game(GAME_ID);
-        state.join_game(player1, GAME_ID, 'Alice', 123);
+        state.join_game(player1, GAME_ID, 'Alice', 123, 123);
 
         // When
         let player_info = state.get_player_info(GAME_ID, player1);
 
         // Then
         assert(player_info.name == 'Alice', 'Player name should match');
-        assert(player_info.public_identity_key == 123, 'Public key should match');
+        assert(
+            player_info.public_identity_key_1 == 123 && player_info.public_identity_key_2 == 123,
+            'Public key should match',
+        );
     }
 
     #[test]
@@ -1141,10 +1151,10 @@ mod tests {
 
         // Setup game with 4 players
         state.create_game(GAME_ID);
-        state.join_game(player1, GAME_ID, 'Alice', 123);
-        state.join_game(player2, GAME_ID, 'Bob', 456);
-        state.join_game(player3, GAME_ID, 'Charlie', 789);
-        state.join_game(player4, GAME_ID, 'Dave', 101112);
+        state.join_game(player1, GAME_ID, 'Alice', 123, 123);
+        state.join_game(player2, GAME_ID, 'Bob', 456, 456);
+        state.join_game(player3, GAME_ID, 'Charlie', 789, 789);
+        state.join_game(player4, GAME_ID, 'Dave', 101112, 101112);
         state.start_game(GAME_ID);
         state.cast_moderator_vote(player1, GAME_ID, player1);
         state.cast_moderator_vote(player2, GAME_ID, player1);
@@ -1193,10 +1203,10 @@ mod tests {
 
         // Setup game with 4 players
         state.create_game(GAME_ID);
-        state.join_game(player1, GAME_ID, 'Alice', 123);
-        state.join_game(player2, GAME_ID, 'Bob', 456);
-        state.join_game(player3, GAME_ID, 'Charlie', 789);
-        state.join_game(player4, GAME_ID, 'Dave', 101112);
+        state.join_game(player1, GAME_ID, 'Alice', 123, 123);
+        state.join_game(player2, GAME_ID, 'Bob', 456, 456);
+        state.join_game(player3, GAME_ID, 'Charlie', 789, 789);
+        state.join_game(player4, GAME_ID, 'Dave', 101112, 101112);
         state.start_game(GAME_ID);
         state.cast_moderator_vote(player1, GAME_ID, player1);
         state.cast_moderator_vote(player2, GAME_ID, player1);
@@ -1242,10 +1252,10 @@ mod tests {
 
         // Setup game with 4 players
         state.create_game(GAME_ID);
-        state.join_game(player1, GAME_ID, 'Alice', 123);
-        state.join_game(player2, GAME_ID, 'Bob', 456);
-        state.join_game(player3, GAME_ID, 'Charlie', 789);
-        state.join_game(player4, GAME_ID, 'Dave', 101112);
+        state.join_game(player1, GAME_ID, 'Alice', 123, 123);
+        state.join_game(player2, GAME_ID, 'Bob', 456, 456);
+        state.join_game(player3, GAME_ID, 'Charlie', 789, 789);
+        state.join_game(player4, GAME_ID, 'Dave', 101112, 101112);
         state.start_game(GAME_ID);
         state.cast_moderator_vote(player1, GAME_ID, player1);
         state.cast_moderator_vote(player2, GAME_ID, player1);
@@ -1284,14 +1294,14 @@ mod tests {
 
         // Setup game with 4 players
         state.create_game(GAME_ID);
-        state.join_game(player1, GAME_ID, 'Alice', 123);
-        state.join_game(player2, GAME_ID, 'Bob', 456);
-        state.join_game(player3, GAME_ID, 'Charlie', 789);
-        state.join_game(player4, GAME_ID, 'Dave', 101112);
-        state.join_game(player5, GAME_ID, 'Eve', 131415);
-        state.join_game(player6, GAME_ID, 'Frank', 161718);
-        state.join_game(player7, GAME_ID, 'Grace', 192021);
-        state.join_game(player8, GAME_ID, 'Hank', 222324);
+        state.join_game(player1, GAME_ID, 'Alice', 123, 123);
+        state.join_game(player2, GAME_ID, 'Bob', 456, 456);
+        state.join_game(player3, GAME_ID, 'Charlie', 789, 789);
+        state.join_game(player4, GAME_ID, 'Dave', 101112, 101112);
+        state.join_game(player5, GAME_ID, 'Eve', 131415, 131415);
+        state.join_game(player6, GAME_ID, 'Frank', 161718, 161718);
+        state.join_game(player7, GAME_ID, 'Grace', 192021, 192021);
+        state.join_game(player8, GAME_ID, 'Hank', 222324, 222324);
         state.start_game(GAME_ID);
         state.cast_moderator_vote(player1, GAME_ID, player1);
         state.cast_moderator_vote(player2, GAME_ID, player1);
@@ -1364,14 +1374,14 @@ mod tests {
 
         // Setup game with 4 players
         state.create_game(GAME_ID);
-        state.join_game(player1, GAME_ID, 'Alice', 123);
-        state.join_game(player2, GAME_ID, 'Bob', 456);
-        state.join_game(player3, GAME_ID, 'Charlie', 789);
-        state.join_game(player4, GAME_ID, 'Dave', 101112);
-        state.join_game(player5, GAME_ID, 'Eve', 131415);
-        state.join_game(player6, GAME_ID, 'Frank', 161718);
-        state.join_game(player7, GAME_ID, 'Grace', 192021);
-        state.join_game(player8, GAME_ID, 'Hank', 222324);
+        state.join_game(player1, GAME_ID, 'Alice', 123, 123);
+        state.join_game(player2, GAME_ID, 'Bob', 456, 456);
+        state.join_game(player3, GAME_ID, 'Charlie', 789, 789);
+        state.join_game(player4, GAME_ID, 'Dave', 101112, 101112);
+        state.join_game(player5, GAME_ID, 'Eve', 131415, 131415);
+        state.join_game(player6, GAME_ID, 'Frank', 161718, 161718);
+        state.join_game(player7, GAME_ID, 'Grace', 192021, 192021);
+        state.join_game(player8, GAME_ID, 'Hank', 222324, 222324);
         state.start_game(GAME_ID);
         state.cast_moderator_vote(player1, GAME_ID, player1);
         state.cast_moderator_vote(player2, GAME_ID, player1);
@@ -1440,14 +1450,14 @@ mod tests {
 
         // Setup game with 4 players
         state.create_game(GAME_ID);
-        state.join_game(player1, GAME_ID, 'Alice', 123);
-        state.join_game(player2, GAME_ID, 'Bob', 456);
-        state.join_game(player3, GAME_ID, 'Charlie', 789);
-        state.join_game(player4, GAME_ID, 'Dave', 101112);
-        state.join_game(player5, GAME_ID, 'Eve', 131415);
-        state.join_game(player6, GAME_ID, 'Frank', 161718);
-        state.join_game(player7, GAME_ID, 'Grace', 192021);
-        state.join_game(player8, GAME_ID, 'Hank', 222324);
+        state.join_game(player1, GAME_ID, 'Alice', 123, 123);
+        state.join_game(player2, GAME_ID, 'Bob', 456, 456);
+        state.join_game(player3, GAME_ID, 'Charlie', 789, 789);
+        state.join_game(player4, GAME_ID, 'Dave', 101112, 101112);
+        state.join_game(player5, GAME_ID, 'Eve', 131415, 131415);
+        state.join_game(player6, GAME_ID, 'Frank', 161718, 161718);
+        state.join_game(player7, GAME_ID, 'Grace', 192021, 192021);
+        state.join_game(player8, GAME_ID, 'Hank', 222324, 222324);
         state.start_game(GAME_ID);
         state.cast_moderator_vote(player1, GAME_ID, player1);
         state.cast_moderator_vote(player2, GAME_ID, player1);
@@ -1531,14 +1541,14 @@ mod tests {
 
         // Setup game with 4 players
         state.create_game(GAME_ID);
-        state.join_game(player1, GAME_ID, 'Alice', 123);
-        state.join_game(player2, GAME_ID, 'Bob', 456);
-        state.join_game(player3, GAME_ID, 'Charlie', 789);
-        state.join_game(player4, GAME_ID, 'Dave', 101112);
-        state.join_game(player5, GAME_ID, 'Eve', 131415);
-        state.join_game(player6, GAME_ID, 'Frank', 161718);
-        state.join_game(player7, GAME_ID, 'Grace', 192021);
-        state.join_game(player8, GAME_ID, 'Hank', 222324);
+        state.join_game(player1, GAME_ID, 'Alice', 123, 123);
+        state.join_game(player2, GAME_ID, 'Bob', 456, 456);
+        state.join_game(player3, GAME_ID, 'Charlie', 789, 789);
+        state.join_game(player4, GAME_ID, 'Dave', 101112, 101112);
+        state.join_game(player5, GAME_ID, 'Eve', 131415, 131415);
+        state.join_game(player6, GAME_ID, 'Frank', 161718, 161718);
+        state.join_game(player7, GAME_ID, 'Grace', 192021, 192021);
+        state.join_game(player8, GAME_ID, 'Hank', 222324, 222324);
         state.start_game(GAME_ID);
         state.cast_moderator_vote(player1, GAME_ID, player1);
         state.cast_moderator_vote(player2, GAME_ID, player1);
