@@ -12,8 +12,6 @@ import {
   num,
   shortString,
 } from "starknet";
-import jwt from "jsonwebtoken";
-import { send } from "process";
 
 const provider = new RpcProvider({
   nodeUrl: process.env.STARKNET_RPC_URL,
@@ -117,15 +115,15 @@ function getPhaseText(phase: number): string {
     case 0:
       return "Game not created";
     case 1:
-      return "Game setup";
+      return "Game Setup";
     case 2:
-      return "Moderator vote";
+      return "Moderator Vote";
     case 3:
-      return "Role assignment";
+      return "Role Assignment";
     case 4:
-      return "Night";
+      return "Night Phase";
     case 5:
-      return "Day";
+      return "Day Phase";
     default:
       return "Unknown";
   }

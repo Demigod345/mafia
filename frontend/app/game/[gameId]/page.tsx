@@ -1,12 +1,13 @@
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-nocheck
 
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Moon, Sun, Users, Play, Check } from "lucide-react";
+import { Moon, Sun, Users, Play, Check } from 'lucide-react';
 import { Chatbox, Session } from "@talkjs/react";
 import Talk from "talkjs";
 import { useParams } from "next/navigation";
@@ -22,6 +23,7 @@ import {
 import { connect } from "get-starknet";
 import { Toaster, toast } from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
+import { VotingPage } from "@/components/VotingPage";
 
 type PlayerInfo = {
   name: string;
@@ -104,6 +106,8 @@ export default function GameArea() {
   const [selectedModerator, setSelectedModerator] = useState<string | null>(
     null
   );
+  const [oldGameState, setOldGameState] = useState<GameState | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const provider = new RpcProvider({
     nodeUrl: process.env.NEXT_PUBLIC_STARKNET_RPC_URL,
@@ -141,6 +145,17 @@ export default function GameArea() {
 
     return () => clearInterval(interval);
   }, [gameId, address]);
+
+  useEffect(() => {
+    if (oldGameState && gameState && oldGameState.current_phase !== gameState.current_phase) {
+      // Phase change detected
+      if (audioRef.current) {
+        audioRef.current.play();
+      }
+      toast.success(`Phase changed to ${getGamePhase(Number(gameState.current_phase))}`);
+    }
+    setOldGameState(gameState);
+  }, [gameState]);
 
   const fetchGameData = async () => {
     try {
@@ -306,6 +321,50 @@ export default function GameArea() {
     }
   };
 
+  const handlePlayerVote = async (votedPlayerAddress: string) => {
+    if (connection) {
+      await toast.promise(
+        (async () => {
+          const call = await connection.execute([
+            {
+              contractAddress: contractData.contractAddress,
+              entrypoint: "cast_vote",
+              calldata: CallData.compile({
+                player: address,
+                game_id: gameId,
+                candidate: votedPlayerAddress,
+              }),
+            },
+          ]);
+
+          const response = await fetch("/api/events", {
+            method: "POST",
+            body: JSON.stringify({
+              game_id: gameId,
+              transaction_hash: call.transaction_hash,
+            }),
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
+
+          if (!response.ok) {
+            toast.error("Failed to update the chat server. Please try again.");
+          }
+        })(),
+        {
+          loading: "Submitting your vote...",
+          success: "Vote submitted successfully!",
+          error: "Failed to submit your vote. Please try again.",
+        }
+      );
+      await fetchGameData();
+      await fetchPlayers();
+    } else {
+      toast.error("Wallet not connected. Please connect your wallet to vote.");
+    }
+  };
+
   const toggleDarkMode = () => {
     setIsDarkMode(!isDarkMode);
     document.documentElement.classList.toggle("dark");
@@ -325,6 +384,8 @@ export default function GameArea() {
         return "Night Phase";
       case 5:
         return "Day Phase";
+      case 6:
+        return "Voting";
       default:
         return "Unknown";
     }
@@ -379,78 +440,84 @@ export default function GameArea() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <h2 className="text-xl font-semibold mb-4">
-                Players ({players.length}/4)
-              </h2>
-              <motion.div
-                className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5 }}
-              >
-                <AnimatePresence>
-                  {players.map((player) => (
-                    <motion.div
-                      key={player.address}
-                      className={`flex items-center space-x-2 p-2 rounded-md ${
-                        player.is_current_player
-                          ? "bg-blue-100 dark:bg-blue-900"
-                          : "bg-gray-100 dark:bg-gray-700"
-                      }`}
-                      initial={{ opacity: 0, scale: 0.8 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.8 }}
-                      transition={{ duration: 0.3 }}
-                    >
-                      <Avatar>
-                        <AvatarImage
-                          src={`https://robohash.org/${player.name}.png`}
-                          alt={player.name}
-                        />
-                        <AvatarFallback>{player.name[0]}</AvatarFallback>
-                      </Avatar>
-                      <span>{player.name}</span>
-                      {player.is_current_player && (
-                        <span className="text-xs bg-blue-500 text-white px-2 py-1 rounded-full ml-auto">
-                          You
-                        </span>
-                      )}
-                      {gameState &&
-                        Number(gameState.current_phase) === 2 &&
-                        !player.is_current_player && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="ml-auto"
-                            onClick={() => handleModeratorVote(player.address)}
-                            disabled={selectedModerator !== null}
-                          >
-                            {selectedModerator === player.address ? (
-                              <Check className="w-4 h-4" />
-                            ) : (
-                              "Vote"
-                            )}
-                          </Button>
-                        )}
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
-              </motion.div>
-              {gameState && Number(gameState.current_phase) === 1 && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 0.3 }}
-                >
-                  <Button
-                    onClick={handleStartGame}
-                    className="w-full"
-                    disabled={players.length < 4}
+              {gameState && Number(gameState.current_phase) === 6 ? (
+                <VotingPage players={players} onVote={handlePlayerVote} />
+              ) : (
+                <>
+                  <h2 className="text-xl font-semibold mb-4">
+                    Players ({players.length}/4)
+                  </h2>
+                  <motion.div
+                    className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5 }}
                   >
-                    <Play className="w-4 h-4 mr-2" />
-                    Start Game ({players.length}/4 players)
-                  </Button>
-                </motion.div>
+                    <AnimatePresence>
+                      {players.map((player) => (
+                        <motion.div
+                          key={player.address}
+                          className={`flex items-center space-x-2 p-2 rounded-md ${
+                            player.is_current_player
+                              ? "bg-blue-100 dark:bg-blue-900"
+                              : "bg-gray-100 dark:bg-gray-700"
+                          }`}
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          transition={{ duration: 0.3 }}
+                        >
+                          <Avatar>
+                            <AvatarImage
+                              src={`https://robohash.org/${player.name}.png`}
+                              alt={player.name}
+                            />
+                            <AvatarFallback>{player.name[0]}</AvatarFallback>
+                          </Avatar>
+                          <span>{player.name}</span>
+                          {player.is_current_player && (
+                            <span className="text-xs bg-blue-500 text-white px-2 py-1 rounded-full ml-auto">
+                              You
+                            </span>
+                          )}
+                          {gameState &&
+                            Number(gameState.current_phase) === 2 &&
+                            !player.is_current_player && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="ml-auto"
+                                onClick={() => handleModeratorVote(player.address)}
+                                disabled={selectedModerator !== null}
+                              >
+                                {selectedModerator === player.address ? (
+                                  <Check className="w-4 h-4" />
+                                ) : (
+                                  "Vote"
+                                )}
+                              </Button>
+                            )}
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
+                  </motion.div>
+                  {gameState && Number(gameState.current_phase) === 1 && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.5, delay: 0.3 }}
+                    >
+                      <Button
+                        onClick={handleStartGame}
+                        className="w-full"
+                        disabled={players.length < 4}
+                      >
+                        <Play className="w-4 h-4 mr-2" />
+                        Start Game ({players.length}/4 players)
+                      </Button>
+                    </motion.div>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>
@@ -468,6 +535,8 @@ export default function GameArea() {
         </div>
       </main>
       <Toaster position="bottom-center" />
+      <audio ref={audioRef} src="/phase-change.mp3" />
     </div>
   );
 }
+
