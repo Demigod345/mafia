@@ -78,11 +78,11 @@ trait IMafiaGame<TContractState> {
         candidate: ContractAddress,
     );
     fn finalize_moderator_selection(ref self: TContractState, game_id: felt252);
-    fn submit_role_commitments(
+    fn submit_role_commitment(
         ref self: TContractState,
         game_id: felt252,
-        players: Array<ContractAddress>,
-        commitments: Array<felt252>,
+        player: ContractAddress,
+        commitment: felt252,
         mafia_count: u32,
         villager_count: u32,
     );
@@ -130,6 +130,7 @@ trait IMafiaGame<TContractState> {
     ) -> bool;
     fn check_all_players_mod_voted(self: @TContractState, game_id: felt252) -> bool;
     fn check_all_players_reveal_roles(self: @TContractState, game_id: felt252) -> bool;
+    fn check_all_roles_commitment_submitted(self: @TContractState, game_id: felt252) -> bool;
     fn verify_mafia_eliminations(
         self: @TContractState,
         game_id: felt252,
@@ -481,6 +482,35 @@ mod MafiaGame {
             all_players_have_voted
         }
 
+        fn check_all_roles_commitment_submitted(self: @ContractState, game_id: felt252) -> bool {
+            let game_state = self._get_game(game_id);
+            let mut i: u32 = 0;
+            let mut all_players_have_submitted: bool = true;
+
+            loop {
+                if i >= game_state.player_count {
+                    break;
+                }
+
+                let player = self.game_player_addresses.read((game_id, i));
+                let player_info = self.game_players.read((game_id, player));
+
+                if player_info.is_moderator {
+                    i += 1;
+                    continue;
+                }
+
+                if player_info.role_commitment == 0 {
+                    all_players_have_submitted = false;
+                    break;
+                }
+
+                i += 1;
+            };
+
+            all_players_have_submitted
+        }
+
         fn check_all_active_players_day_voted(
             self: @ContractState, game_id: felt252, day_id: u32,
         ) -> bool {
@@ -538,11 +568,11 @@ mod MafiaGame {
             self._get_game(game_id)
         }
 
-        fn submit_role_commitments(
+        fn submit_role_commitment(
             ref self: ContractState,
             game_id: felt252,
-            players: Array<ContractAddress>,
-            commitments: Array<felt252>,
+            player: ContractAddress,
+            commitment: felt252,
             mafia_count: u32,
             villager_count: u32,
         ) {
@@ -562,43 +592,23 @@ mod MafiaGame {
             assert(mafia_count < villager_count, 'Too many mafia players');
             assert(mafia_count >= 1, 'Need at least one mafia');
 
-            let mut i: u32 = 0;
-            let players_len = players.len();
-            assert(players_len == commitments.len(), 'Array length mismatch');
-            assert(
-                players_len + game_state.moderator_count == game_state.player_count,
-                'Invalid player count',
-            );
-
             game_state.mafia_count = mafia_count;
             game_state.villager_count = villager_count;
             game_state.active_mafia_count = mafia_count;
             game_state.active_villager_count = villager_count;
 
-            loop {
-                if i >= players_len {
-                    break;
-                }
+            let mut player_info = self.game_players.read((game_id, player));
+            assert(player_info.address != contract_address_const::<0>(), 'Invalid player');
 
-                let player = *players.at(i);
-                let commitment = *commitments.at(i);
+            player_info.role_commitment = commitment;
+            self.game_players.write((game_id, player), player_info);
+            self.emit(RoleCommitmentSubmitted { game_id, player, player_name: player_info.name });
 
-                let mut player_info = self.game_players.read((game_id, player));
-                assert(player_info.address != contract_address_const::<0>(), 'Invalid player');
-
-                player_info.role_commitment = commitment;
-                self.game_players.write((game_id, player), player_info);
-                self
-                    .emit(
-                        RoleCommitmentSubmitted { game_id, player, player_name: player_info.name },
-                    );
-
-                i += 1;
-            };
-
-            game_state.current_phase = super::PHASE_NIGHT; // Move to PHASE_NIGHT phase
-            self.games.write(game_id, game_state);
-            self.emit(PhaseChanged { game_id, new_phase: super::PHASE_NIGHT });
+            if (self.check_all_roles_commitment_submitted(game_id)) {
+                game_state.current_phase = super::PHASE_NIGHT; // Move to PHASE_NIGHT phase
+                self.games.write(game_id, game_state);
+                self.emit(PhaseChanged { game_id, new_phase: super::PHASE_NIGHT });
+            }
         }
 
         fn reveal_role(
@@ -1144,7 +1154,7 @@ mod tests {
 
     #[test]
     #[available_gas(2000000000)]
-    fn test_submit_role_commitments() {
+    fn test_submit_role_commitment() {
         // Given
         let mut state = MafiaGame::contract_state_for_testing();
         let (player1, player2, player3, player4, _, _, _, _) = setup_players();
@@ -1168,22 +1178,9 @@ mod tests {
         let commitment_player4 = state
             .get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789);
 
-        let mut players = ArrayTrait::new();
-        players.append(player2);
-        players.append(player3);
-        players.append(player4);
-
-        let mut commitments = ArrayTrait::new();
-        commitments.append(commitment_player2);
-        commitments.append(commitment_player3);
-        commitments.append(commitment_player4);
-        // When
-        state
-            .submit_role_commitments(
-                GAME_ID, // [player2, player3, player4],
-                // [commitment_player2, commitment_player3, commitment_player4],
-                players, commitments, 1, 2,
-            );
+        state.submit_role_commitment(GAME_ID, player2, commitment_player2, 1, 2);
+        state.submit_role_commitment(GAME_ID, player3, commitment_player3, 1, 2);
+        state.submit_role_commitment(GAME_ID, player4, commitment_player4, 1, 2);
 
         // Then
         let game_state = state.get_game_state(GAME_ID);
@@ -1213,20 +1210,16 @@ mod tests {
         state.cast_moderator_vote(player3, GAME_ID, player1);
         state.cast_moderator_vote(player4, GAME_ID, player2);
 
-        let mut players = ArrayTrait::new();
-        players.append(player2);
-        players.append(player3);
-        players.append(player4);
+        let commitment_player2 = state
+            .get_role_commitment_hash(GAME_ID, player2, super::ROLE_MAFIA, 123);
+        let commitment_player3 = state
+            .get_role_commitment_hash(GAME_ID, player3, super::ROLE_VILLAGER, 456);
+        let commitment_player4 = state
+            .get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789);
 
-        let mut commitments = ArrayTrait::new();
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player2, super::ROLE_MAFIA, 123));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_VILLAGER, 456));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789));
-
-        state.submit_role_commitments(GAME_ID, players, commitments, 1, 2);
+        state.submit_role_commitment(GAME_ID, player2, commitment_player2, 1, 2);
+        state.submit_role_commitment(GAME_ID, player3, commitment_player3, 1, 2);
+        state.submit_role_commitment(GAME_ID, player4, commitment_player4, 1, 2);
 
         state.eliminate_player_by_mafia(GAME_ID, player3, 1, 123, 456);
 
@@ -1262,28 +1255,14 @@ mod tests {
         state.cast_moderator_vote(player3, GAME_ID, player1);
         state.cast_moderator_vote(player4, GAME_ID, player2);
 
-        let mut players = ArrayTrait::new();
-        players.append(player2);
-        players.append(player3);
-        players.append(player4);
-
-        let mut commitments = ArrayTrait::new();
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player2, super::ROLE_MAFIA, 123));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_VILLAGER, 456));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789));
-
-        state.submit_role_commitments(GAME_ID, players, commitments, 1, 2);
+        state.submit_role_commitment(GAME_ID, player2, state.get_role_commitment_hash(GAME_ID, player2, super::ROLE_MAFIA, 123), 1, 2);
+        state.submit_role_commitment(GAME_ID, player3, state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_VILLAGER, 456), 1, 2);
+        state.submit_role_commitment(GAME_ID, player4, state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789), 1, 2);
 
         state.eliminate_player_by_mafia(GAME_ID, player2, 1, 123, 456);
         state.reveal_role(GAME_ID, player2, super::ROLE_VILLAGER, 123); // Should panic
     }
 
-    // fn check_all_active_players_day_voted(self: @TContractState, game_id: felt252, day_id: u32)
-    // -> bool;
-    // fn check_all_players_mod_voted(self: @TContractState, game_id: felt252) -> bool;
     #[test]
     #[available_gas(2000000000)]
     fn test_check_all_active_players_day_voted() {
@@ -1312,32 +1291,13 @@ mod tests {
         state.cast_moderator_vote(player7, GAME_ID, player1);
         state.cast_moderator_vote(player8, GAME_ID, player1);
 
-        let mut players = ArrayTrait::new();
-        players.append(player1);
-        players.append(player3);
-        players.append(player4);
-        players.append(player5);
-        players.append(player6);
-        players.append(player7);
-        players.append(player8);
-
-        let mut commitments = ArrayTrait::new();
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player2, super::ROLE_MAFIA, 123));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_MAFIA, 456));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player5, super::ROLE_VILLAGER, 101112));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player6, super::ROLE_VILLAGER, 131415));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player7, super::ROLE_VILLAGER, 161718));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player8, super::ROLE_VILLAGER, 192021));
-
-        state.submit_role_commitments(GAME_ID, players, commitments, 2, 5);
+        state.submit_role_commitment(GAME_ID, player2, state.get_role_commitment_hash(GAME_ID, player2, super::ROLE_MAFIA, 123), 2, 5);
+        state.submit_role_commitment(GAME_ID, player3, state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_MAFIA, 456), 2, 5);
+        state.submit_role_commitment(GAME_ID, player4, state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789), 2, 5);
+        state.submit_role_commitment(GAME_ID, player5, state.get_role_commitment_hash(GAME_ID, player5, super::ROLE_VILLAGER, 101112), 2, 5);
+        state.submit_role_commitment(GAME_ID, player6, state.get_role_commitment_hash(GAME_ID, player6, super::ROLE_VILLAGER, 131415), 2, 5);
+        state.submit_role_commitment(GAME_ID, player7, state.get_role_commitment_hash(GAME_ID, player7, super::ROLE_VILLAGER, 161718), 2, 5);
+        state.submit_role_commitment(GAME_ID, player8, state.get_role_commitment_hash(GAME_ID, player8, super::ROLE_VILLAGER, 192021), 2, 5);
 
         let mafia1_commitment = state.get_mafia_commitment_hash(GAME_ID, player2, player8, 123);
         let mafia2_commitment = state.get_mafia_commitment_hash(GAME_ID, player3, player8, 456);
@@ -1392,32 +1352,13 @@ mod tests {
         state.cast_moderator_vote(player7, GAME_ID, player2);
         state.cast_moderator_vote(player8, GAME_ID, player2);
 
-        let mut players = ArrayTrait::new();
-        players.append(player1);
-        players.append(player3);
-        players.append(player4);
-        players.append(player5);
-        players.append(player6);
-        players.append(player7);
-        players.append(player8);
-
-        let mut commitments = ArrayTrait::new();
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player1, super::ROLE_MAFIA, 123));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_MAFIA, 456));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player5, super::ROLE_VILLAGER, 101112));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player6, super::ROLE_VILLAGER, 131415));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player7, super::ROLE_VILLAGER, 161718));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player8, super::ROLE_VILLAGER, 192021));
-
-        state.submit_role_commitments(GAME_ID, players, commitments, 2, 5);
+        state.submit_role_commitment(GAME_ID, player1, state.get_role_commitment_hash(GAME_ID, player1, super::ROLE_MAFIA, 123), 2, 5);
+        state.submit_role_commitment(GAME_ID, player3, state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_MAFIA, 456), 2, 5);
+        state.submit_role_commitment(GAME_ID, player4, state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789), 2, 5);
+        state.submit_role_commitment(GAME_ID, player5, state.get_role_commitment_hash(GAME_ID, player5, super::ROLE_VILLAGER, 101112), 2, 5);
+        state.submit_role_commitment(GAME_ID, player6, state.get_role_commitment_hash(GAME_ID, player6, super::ROLE_VILLAGER, 131415), 2, 5);
+        state.submit_role_commitment(GAME_ID, player7, state.get_role_commitment_hash(GAME_ID, player7, super::ROLE_VILLAGER, 161718), 2, 5);
+        state.submit_role_commitment(GAME_ID, player8, state.get_role_commitment_hash(GAME_ID, player8, super::ROLE_VILLAGER, 192021), 2, 5);
 
         let mafia1_commitment = state.get_mafia_commitment_hash(GAME_ID, player1, player8, 123);
         let mafia2_commitment = state.get_mafia_commitment_hash(GAME_ID, player3, player8, 456);
@@ -1468,32 +1409,13 @@ mod tests {
         state.cast_moderator_vote(player7, GAME_ID, player2);
         state.cast_moderator_vote(player8, GAME_ID, player2);
 
-        let mut players = ArrayTrait::new();
-        players.append(player2);
-        players.append(player3);
-        players.append(player4);
-        players.append(player5);
-        players.append(player6);
-        players.append(player7);
-        players.append(player8);
-
-        let mut commitments = ArrayTrait::new();
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player2, super::ROLE_MAFIA, 123));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_MAFIA, 456));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player5, super::ROLE_VILLAGER, 101112));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player6, super::ROLE_VILLAGER, 131415));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player7, super::ROLE_VILLAGER, 161718));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player8, super::ROLE_VILLAGER, 192021));
-
-        state.submit_role_commitments(GAME_ID, players, commitments, 2, 5);
+        state.submit_role_commitment(GAME_ID, player2, state.get_role_commitment_hash(GAME_ID, player2, super::ROLE_MAFIA, 123), 2, 5);
+        state.submit_role_commitment(GAME_ID, player3, state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_MAFIA, 456), 2, 5);
+        state.submit_role_commitment(GAME_ID, player4, state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789), 2, 5);
+        state.submit_role_commitment(GAME_ID, player5, state.get_role_commitment_hash(GAME_ID, player5, super::ROLE_VILLAGER, 101112), 2, 5);
+        state.submit_role_commitment(GAME_ID, player6, state.get_role_commitment_hash(GAME_ID, player6, super::ROLE_VILLAGER, 131415), 2, 5);
+        state.submit_role_commitment(GAME_ID, player7, state.get_role_commitment_hash(GAME_ID, player7, super::ROLE_VILLAGER, 161718), 2, 5);
+        state.submit_role_commitment(GAME_ID, player8, state.get_role_commitment_hash(GAME_ID, player8, super::ROLE_VILLAGER, 192021), 2, 5);
 
         let mafia1_commitment = state.get_mafia_commitment_hash(GAME_ID, player2, player8, 123);
         let mafia2_commitment = state.get_mafia_commitment_hash(GAME_ID, player3, player8, 456);
@@ -1559,32 +1481,13 @@ mod tests {
         state.cast_moderator_vote(player7, GAME_ID, player2);
         state.cast_moderator_vote(player8, GAME_ID, player2);
 
-        let mut players = ArrayTrait::new();
-        players.append(player2);
-        players.append(player3);
-        players.append(player4);
-        players.append(player5);
-        players.append(player6);
-        players.append(player7);
-        players.append(player8);
-
-        let mut commitments = ArrayTrait::new();
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player2, super::ROLE_MAFIA, 123));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_MAFIA, 456));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player5, super::ROLE_VILLAGER, 101112));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player6, super::ROLE_VILLAGER, 131415));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player7, super::ROLE_VILLAGER, 161718));
-        commitments
-            .append(state.get_role_commitment_hash(GAME_ID, player8, super::ROLE_VILLAGER, 192021));
-
-        state.submit_role_commitments(GAME_ID, players, commitments, 2, 5);
+        state.submit_role_commitment(GAME_ID, player2, state.get_role_commitment_hash(GAME_ID, player2, super::ROLE_MAFIA, 123), 2, 5);
+        state.submit_role_commitment(GAME_ID, player3, state.get_role_commitment_hash(GAME_ID, player3, super::ROLE_MAFIA, 456), 2, 5);
+        state.submit_role_commitment(GAME_ID, player4, state.get_role_commitment_hash(GAME_ID, player4, super::ROLE_VILLAGER, 789), 2, 5);
+        state.submit_role_commitment(GAME_ID, player5, state.get_role_commitment_hash(GAME_ID, player5, super::ROLE_VILLAGER, 101112), 2, 5);
+        state.submit_role_commitment(GAME_ID, player6, state.get_role_commitment_hash(GAME_ID, player6, super::ROLE_VILLAGER, 131415), 2, 5);
+        state.submit_role_commitment(GAME_ID, player7, state.get_role_commitment_hash(GAME_ID, player7, super::ROLE_VILLAGER, 161718), 2, 5);
+        state.submit_role_commitment(GAME_ID, player8, state.get_role_commitment_hash(GAME_ID, player8, super::ROLE_VILLAGER, 192021), 2, 5);
 
         let mafia1_commitment = state.get_mafia_commitment_hash(GAME_ID, player2, player8, 123);
         let mafia2_commitment = state.get_mafia_commitment_hash(GAME_ID, player3, player8, 456);
