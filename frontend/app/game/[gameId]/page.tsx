@@ -1,235 +1,53 @@
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-nocheck
-
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Moon, Sun, Users, Play, Check } from 'lucide-react';
-import { Chatbox, Session } from "@talkjs/react";
-import Talk from "talkjs";
+import { useState, useRef } from "react";
 import { useParams } from "next/navigation";
-import contractData from "@/contract/data.json";
-import {
-  RpcProvider,
-  Contract,
-  WalletAccount,
-  CallData,
-  num,
-  shortString,
-} from "starknet";
+import { motion, AnimatePresence } from "framer-motion";
+import { Moon, Sun, Users, Play } from 'lucide-react';
 import { connect } from "get-starknet";
 import { Toaster, toast } from "react-hot-toast";
-import { motion, AnimatePresence } from "framer-motion";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PlayerCard } from "@/components/PlayerCard";
 import { VotingPage } from "@/components/VotingPage";
-
-type PlayerInfo = {
-  name: string;
-  address: string;
-  is_current_player: boolean;
-  public_identity_key_1: string;
-  public_identity_key_2: string;
-  has_voted_moderator: boolean;
-  is_moderator: boolean;
-  is_active: boolean;
-  role_commitment: string;
-  revealed_role: number;
-  elimination_info: EliminatedPlayerInfo;
-};
-
-type EliminatedPlayerInfo = {
-  reason: number;
-  mafia_remaining: number;
-  mafia_1_commitment: string;
-  mafia_2_commitment: string;
-};
-
-type GameState = {
-  created: boolean;
-  started: boolean;
-  ended: boolean;
-  current_phase: number;
-  player_count: number;
-  current_day: number;
-  moderator: string;
-  is_moderator_chosen: boolean;
-  mafia_count: number;
-  villager_count: number;
-  moderator_count: number;
-  active_mafia_count: number;
-  active_villager_count: number;
-};
-
-function Chat({ name }: { name: string }) {
-  const { gameId } = useParams();
-  const syncUser = useCallback(
-    () =>
-      new Talk.User({
-        id: name.toString().toLowerCase(),
-        name: name.toString(),
-        email: null,
-        photoUrl: `https://robohash.org/${name}.png`,
-        welcomeMessage: "Hi! Welcome to Mafia!",
-      }),
-    [name]
-  );
-
-  const syncConversation = useCallback(
-    (session: Talk.Session) => {
-      const conversation = session.getOrCreateConversation(gameId as string);
-      conversation.setParticipant(session.me);
-      return conversation;
-    },
-    [gameId]
-  );
-
-  return (
-    <Session appId="tQrD36pK" syncUser={syncUser}>
-      <Chatbox
-        syncConversation={syncConversation}
-        style={{ height: "500px" }}
-      />
-    </Session>
-  );
-}
+import { Chat } from "@/components/Chat";
+import { useGameData } from "@/hooks/useGameData";
+import { GamePhase, getGamePhase } from "@/types/game";
+import contractData from "@/contract/data.json";
 
 export default function GameArea() {
   const { gameId } = useParams();
-  const [gameState, setGameState] = useState<GameState | null>(null);
-  const [players, setPlayers] = useState<PlayerInfo[]>([]);
-  const [isDarkMode, setIsDarkMode] = useState(false);
-  const [connection, setConnection] = useState<WalletAccount | null>(null);
+  const [isDarkMode, setIsDarkMode] = useState(true);
+  const [connection, setConnection] = useState(null);
   const [address, setAddress] = useState("");
-  const [mafiaContract, setMafiaContract] = useState<Contract | null>(null);
-  const [selectedModerator, setSelectedModerator] = useState<string | null>(
-    null
-  );
-  const [oldGameState, setOldGameState] = useState<GameState | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [selectedModerator, setSelectedModerator] = useState(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
 
-  const provider = new RpcProvider({
-    nodeUrl: process.env.NEXT_PUBLIC_STARKNET_RPC_URL,
-  });
+  const {
+    gameState,
+    players,
+    isLoading,
+    error,
+    refreshData,
+    getContract
+  } = useGameData(gameId, connection, address);
 
-  useEffect(() => {
-    const handleConnectWallet = async () => {
-      try {
-        const selectedWalletSWO = await connect({ modalTheme: "dark" });
-        const wallet = await new WalletAccount(
-          { nodeUrl: process.env.NEXT_PUBLIC_STARKNET_RPC_URL },
-          selectedWalletSWO
-        );
-
-        if (wallet) {
-          setConnection(wallet);
-          setAddress(wallet.walletProvider.selectedAddress);
-          toast.success("Wallet connected successfully!");
-        }
-      } catch (error) {
-        console.error("Error connecting wallet:", error);
-        toast.error("Failed to connect wallet. Please try again.");
-      }
-    };
-
-    handleConnectWallet();
-
-    const fetchData = async () => {
-      await fetchGameData();
-      await fetchPlayers();
-    };
-
-    fetchData();
-    const interval = setInterval(fetchData, 5000); // Fetch every 5 seconds
-
-    return () => clearInterval(interval);
-  }, [gameId, address]);
-
-  useEffect(() => {
-    if (oldGameState && gameState && oldGameState.current_phase !== gameState.current_phase) {
-      // Phase change detected
-      if (audioRef.current) {
-        audioRef.current.play();
-      }
-      toast.success(`Phase changed to ${getGamePhase(Number(gameState.current_phase))}`);
-    }
-    setOldGameState(gameState);
-  }, [gameState]);
-
-  const fetchGameData = async () => {
+  const handleConnectWallet = async () => {
     try {
-      const contract = await getContract();
-      if (contract) {
-        const gameStateResponse = await contract.get_game_state(gameId);
-        console.log("Game state:", gameStateResponse);
-        setGameState(gameStateResponse);
+      const selectedWalletSWO = await connect({ modalTheme: "dark" });
+      const wallet = await new WalletAccount(
+        { nodeUrl: process.env.NEXT_PUBLIC_STARKNET_RPC_URL },
+        selectedWalletSWO
+      );
+
+      if (wallet) {
+        setConnection(wallet);
+        setAddress(wallet.walletProvider.selectedAddress);
+        toast.success("Wallet connected successfully!");
       }
     } catch (error) {
-      console.error("Error fetching game data:", error);
-    }
-  };
-
-  const fetchPlayers = async () => {
-    try {
-      const contract = await getContract();
-      if (contract) {
-        const playerAddresses = await contract.get_players(gameId);
-        let currentPlayerFound = false;
-        const playersInfo = await Promise.all(
-          playerAddresses.map(async (playerAddress) => {
-            const playerInfo = await contract.get_player_info(
-              gameId,
-              playerAddress
-            );
-            playerInfo.address = num.toHex(playerAddress);
-            playerInfo.name = shortString.decodeShortString(playerInfo.name);
-            if (
-              playerInfo.address.toString().toLowerCase() ===
-              address.toString().toLowerCase()
-            ) {
-              playerInfo.is_current_player = true;
-              currentPlayerFound = true;
-            }
-            return playerInfo;
-          })
-        );
-        setPlayers(playersInfo);
-        console.log("Players:", playersInfo);
-        if (!currentPlayerFound) {
-          toast.error("Current player not found in the game");
-        }
-      }
-    } catch (error) {
-      console.error("Error fetching players:", error);
-    }
-  };
-
-  const getContract = async () => {
-    if (mafiaContract != null) {
-      return mafiaContract;
-    }
-
-    try {
-      const { abi: contractAbi } = await provider.getClassAt(
-        contractData.contractAddress
-      );
-      if (contractAbi === undefined) {
-        throw new Error("No ABI found for the contract.");
-      }
-      const contract = new Contract(
-        contractAbi,
-        contractData.contractAddress,
-        provider
-      );
-      setMafiaContract(contract);
-      return contract;
-    } catch (error) {
-      console.error("Error getting contract:", error);
-      toast.error(
-        "Failed to interact with the game contract. Please try again."
-      );
-      return null;
+      console.error("Error connecting wallet:", error);
+      toast.error("Failed to connect wallet. Please try again.");
     }
   };
 
@@ -237,31 +55,20 @@ export default function GameArea() {
     if (players.length >= 4 && connection) {
       await toast.promise(
         (async () => {
-          const call = await connection.execute([
-            {
-              contractAddress: contractData.contractAddress,
-              entrypoint: "start_game",
-              calldata: CallData.compile({
-                game_id: gameId,
-              }),
-            },
-          ]);
+          const call = await connection.execute([{
+            contractAddress: contractData.contractAddress,
+            entrypoint: "start_game",
+            calldata: CallData.compile({ game_id: gameId }),
+          }]);
 
-          const response = await fetch("/api/events", {
+          await fetch("/api/events", {
             method: "POST",
             body: JSON.stringify({
               game_id: gameId,
               transaction_hash: call.transaction_hash,
             }),
-            headers: {
-              "Content-Type": "application/json",
-            },
+            headers: { "Content-Type": "application/json" },
           });
-
-          if (!response.ok) {
-            toast.error("Failed to update the chat server. Please try again.");
-          }
-          // await fetchGameData();
         })(),
         {
           loading: "Starting the game...",
@@ -269,239 +76,123 @@ export default function GameArea() {
           error: "Failed to start the game. Please try again.",
         }
       );
+      await refreshData();
     } else {
-      toast.error(
-        "Not enough players to start the game or wallet not connected"
-      );
+      toast.error("Not enough players to start the game or wallet not connected");
     }
   };
 
   const handleModeratorVote = async (moderatorAddress: string) => {
-    if (connection) {
-      setSelectedModerator(moderatorAddress);
-      await toast.promise(
-        (async () => {
-          const call = await connection.execute([
-            {
-              contractAddress: contractData.contractAddress,
-              entrypoint: "cast_moderator_vote",
-              calldata: CallData.compile({
-                player: address,
-                game_id: gameId,
-                candidate: moderatorAddress,
-              }),
-            },
-          ]);
-
-          const response = await fetch("/api/events", {
-            method: "POST",
-            body: JSON.stringify({
-              game_id: gameId,
-              transaction_hash: call.transaction_hash,
-            }),
-            headers: {
-              "Content-Type": "application/json",
-            },
-          });
-
-          if (!response.ok) {
-            toast.error("Failed to update the chat server. Please try again.");
-          }
-        })(),
-        {
-          loading: "Submitting your vote...",
-          success: "Vote submitted successfully!",
-          error: "Failed to submit your vote. Please try again.",
-        }
-      );
-      await fetchGameData();
-      await fetchPlayers();
-    } else {
-      toast.error("Wallet not connected. Please connect your wallet to vote.");
+    if (!connection) {
+      toast.error("Please connect your wallet first");
+      return;
     }
-  };
 
-  const handlePlayerVote = async (votedPlayerAddress: string) => {
-    if (connection) {
-      await toast.promise(
-        (async () => {
-          const call = await connection.execute([
-            {
-              contractAddress: contractData.contractAddress,
-              entrypoint: "cast_vote",
-              calldata: CallData.compile({
-                player: address,
-                game_id: gameId,
-                candidate: votedPlayerAddress,
-              }),
-            },
-          ]);
+    setSelectedModerator(moderatorAddress);
+    await toast.promise(
+      (async () => {
+        const call = await connection.execute([{
+          contractAddress: contractData.contractAddress,
+          entrypoint: "cast_moderator_vote",
+          calldata: CallData.compile({
+            player: address,
+            game_id: gameId,
+            candidate: moderatorAddress,
+          }),
+        }]);
 
-          const response = await fetch("/api/events", {
-            method: "POST",
-            body: JSON.stringify({
-              game_id: gameId,
-              transaction_hash: call.transaction_hash,
-            }),
-            headers: {
-              "Content-Type": "application/json",
-            },
-          });
-
-          if (!response.ok) {
-            toast.error("Failed to update the chat server. Please try again.");
-          }
-        })(),
-        {
-          loading: "Submitting your vote...",
-          success: "Vote submitted successfully!",
-          error: "Failed to submit your vote. Please try again.",
-        }
-      );
-      await fetchGameData();
-      await fetchPlayers();
-    } else {
-      toast.error("Wallet not connected. Please connect your wallet to vote.");
-    }
-  };
-
-  const toggleDarkMode = () => {
-    setIsDarkMode(!isDarkMode);
-    document.documentElement.classList.toggle("dark");
-  };
-
-  const getGamePhase = (phase: number): string => {
-    switch (phase) {
-      case 0:
-        return "Game not created";
-      case 1:
-        return "Game Setup";
-      case 2:
-        return "Moderator Vote";
-      case 3:
-        return "Role Assignment";
-      case 4:
-        return "Night Phase";
-      case 5:
-        return "Day Phase";
-      case 6:
-        return "Voting";
-      default:
-        return "Unknown";
-    }
+        await fetch("/api/events", {
+          method: "POST",
+          body: JSON.stringify({
+            game_id: gameId,
+            transaction_hash: call.transaction_hash,
+          }),
+          headers: { "Content-Type": "application/json" },
+        });
+      })(),
+      {
+        loading: "Submitting your vote...",
+        success: "Vote submitted successfully!",
+        error: "Failed to submit your vote. Please try again.",
+      }
+    );
+    await refreshData();
   };
 
   return (
-    <div
-      className={`min-h-screen ${
-        isDarkMode ? "dark bg-gray-900 text-white" : "bg-gray-100"
-      }`}
-    >
-      <header className="bg-white dark:bg-gray-800 shadow-md">
+    <div className="min-h-screen bg-gray-900 text-gray-100">
+      <header className="bg-black/50 backdrop-blur-sm border-b border-gray-800">
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-          <motion.h1
-            className="text-3xl font-bold"
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="flex items-center space-x-4"
           >
-            Mafia Game
-          </motion.h1>
-          <div className="flex items-center space-x-4">
-            <motion.span
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-            >
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-emerald-400 to-emerald-600 bg-clip-text text-transparent">
+              Cali Mafia
+            </h1>
+            <span className="text-sm px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400">
               Game ID: {gameId}
-            </motion.span>
-            <Button variant="outline" size="icon" onClick={toggleDarkMode}>
-              {isDarkMode ? (
-                <Sun className="h-4 w-4" />
-              ) : (
-                <Moon className="h-4 w-4" />
-              )}
-            </Button>
+            </span>
+          </motion.div>
+          <div className="flex items-center space-x-4">
+            {!connection && (
+              <Button
+                variant="outline"
+                onClick={handleConnectWallet}
+                className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
+              >
+                Connect Wallet
+              </Button>
+            )}
           </div>
         </div>
       </header>
 
       <main className="container mx-auto p-4 mt-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <Card className="lg:col-span-2">
+          <Card className="lg:col-span-2 bg-gray-900/50 backdrop-blur-sm border-gray-800">
             <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
+              <CardTitle className="flex items-center space-x-2 text-emerald-400">
                 <Users className="w-6 h-6" />
                 <span>
-                  {gameState
+                  {isLoading
+                    ? "Loading..."
+                    : gameState
                     ? getGamePhase(Number(gameState.current_phase))
                     : "Game Phase Loading..."}
                 </span>
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {gameState && Number(gameState.current_phase) === 6 ? (
+              {isLoading ? (
+                <div className="flex items-center justify-center h-48">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500" />
+                </div>
+              ) : error ? (
+                <div className="text-red-400 text-center p-4">{error}</div>
+              ) : gameState && Number(gameState.current_phase) === GamePhase.DAY ? (
                 <VotingPage players={players} onVote={handlePlayerVote} />
               ) : (
                 <>
-                  <h2 className="text-xl font-semibold mb-4">
+                  <h2 className="text-xl font-semibold mb-4 text-gray-300">
                     Players ({players.length}/4)
                   </h2>
-                  <motion.div
-                    className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.5 }}
-                  >
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                     <AnimatePresence>
                       {players.map((player) => (
-                        <motion.div
+                        <PlayerCard
                           key={player.address}
-                          className={`flex items-center space-x-2 p-2 rounded-md ${
-                            player.is_current_player
-                              ? "bg-blue-100 dark:bg-blue-900"
-                              : "bg-gray-100 dark:bg-gray-700"
-                          }`}
-                          initial={{ opacity: 0, scale: 0.8 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.8 }}
-                          transition={{ duration: 0.3 }}
-                        >
-                          <Avatar>
-                            <AvatarImage
-                              src={`https://robohash.org/${player.name}.png`}
-                              alt={player.name}
-                            />
-                            <AvatarFallback>{player.name[0]}</AvatarFallback>
-                          </Avatar>
-                          <span>{player.name}</span>
-                          {player.is_current_player && (
-                            <span className="text-xs bg-blue-500 text-white px-2 py-1 rounded-full ml-auto">
-                              You
-                            </span>
-                          )}
-                          {gameState &&
-                            Number(gameState.current_phase) === 2 &&
-                            !player.is_current_player && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="ml-auto"
-                                onClick={() => handleModeratorVote(player.address)}
-                                disabled={selectedModerator !== null}
-                              >
-                                {selectedModerator === player.address ? (
-                                  <Check className="w-4 h-4" />
-                                ) : (
-                                  "Vote"
-                                )}
-                              </Button>
-                            )}
-                        </motion.div>
+                          player={player}
+                          showVoteButton={gameState?.current_phase === GamePhase.MODERATOR_VOTE}
+                          onVote={handleModeratorVote}
+                          isVoted={selectedModerator === player.address}
+                          disabled={selectedModerator !== null}
+                        />
                       ))}
                     </AnimatePresence>
-                  </motion.div>
-                  {gameState && Number(gameState.current_phase) === 1 && (
+                  </div>
+                  {gameState?.current_phase === GamePhase.SETUP && (
                     <motion.div
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -509,7 +200,7 @@ export default function GameArea() {
                     >
                       <Button
                         onClick={handleStartGame}
-                        className="w-full"
+                        className="w-full bg-emerald-500 hover:bg-emerald-600 text-white"
                         disabled={players.length < 4}
                       >
                         <Play className="w-4 h-4 mr-2" />
@@ -522,9 +213,9 @@ export default function GameArea() {
             </CardContent>
           </Card>
 
-          <Card className="lg:row-span-2">
+          <Card className="lg:row-span-2 bg-gray-900/50 backdrop-blur-sm border-gray-800">
             <CardHeader>
-              <CardTitle>Chat</CardTitle>
+              <CardTitle className="text-emerald-400">Game Chat</CardTitle>
             </CardHeader>
             <Chat
               name={
@@ -539,4 +230,3 @@ export default function GameArea() {
     </div>
   );
 }
-

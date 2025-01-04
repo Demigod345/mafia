@@ -9,7 +9,11 @@ type PlayerInfo = {
   name: string;
   address: string;
   is_current_player: boolean;
+  has_voted_moderator: boolean;
+  is_moderator: boolean;
   is_active: boolean;
+  role_commitment: string;
+  revealed_role: number;
 };
 
 type VotingPageProps = {
@@ -49,6 +53,7 @@ export function VotingPage({ players, onVote }: VotingPageProps) {
                 onClick={() => setSelectedPlayer(player.address)}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
+                // disabled={player.is_moderator || !player.is_active}
               >
                 <Avatar>
                   <AvatarImage
