@@ -874,13 +874,7 @@ mod MafiaGame {
 
         fn check_winner(self: @ContractState, game_id: felt252) -> u32 {
             let game_state = self._get_game(game_id);
-            if game_state.active_mafia_count == 0 {
-                super::WINNER_VILLAGERS
-            } else if game_state.active_mafia_count >= game_state.active_villager_count {
-                super::WINNER_MAFIA
-            } else {
-                super::WINNER_UNDEFINED
-            }
+            self._check_winner(game_state)
         }
 
         fn does_game_exist(self: @ContractState, game_id: felt252) -> bool {
@@ -930,7 +924,7 @@ mod MafiaGame {
         fn _check_winner(self: @ContractState, game_state: super::GameState) -> u32 {
             if game_state.active_mafia_count == 0 {
                 super::WINNER_VILLAGERS
-            } else if game_state.active_mafia_count > game_state.active_villager_count {
+            } else if game_state.active_mafia_count >= game_state.active_villager_count {
                 super::WINNER_MAFIA
             } else {
                 super::WINNER_UNDEFINED
@@ -1510,12 +1504,6 @@ mod tests {
 
         state.eliminate_player_by_mafia(GAME_ID, player6, 2, mafia1_commitment, mafia2_commitment);
         state.reveal_role(GAME_ID, player6, super::ROLE_VILLAGER, 131415);
-
-        state.vote(player2, GAME_ID, 1, player4);
-        state.vote(player3, GAME_ID, 1, player4);
-        state.vote(player4, GAME_ID, 1, player5);
-        state.vote(player5, GAME_ID, 1, player4);
-        state.reveal_role(GAME_ID, player4, super::ROLE_VILLAGER, 789);
 
         // Then
         let game_state = state.get_game_state(GAME_ID);
