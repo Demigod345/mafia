@@ -279,6 +279,9 @@ async function updateConvertion(gameId) {
 async function sendMessages(messages, gameId) {
   try {
     await updateConvertion(gameId);
+    if(messages.length === 0) {
+      return;
+    }
     const response = await fetch(
       `https://api.talkjs.com/v1/tQrD36pK/conversations/${gameId}/messages`,
       {
