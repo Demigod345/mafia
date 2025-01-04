@@ -301,7 +301,7 @@ export default function GameLobby() {
       }`}
     >
       <header className="bg-gray-100 dark:bg-gray-800 py-4 px-8 flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Mafia Game</h1>
+        <h1 className="text-2xl font-bold">Cali Mafia</h1>
         <div className="flex items-center space-x-4">
           <Button
             variant="outline"

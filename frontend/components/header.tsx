@@ -22,7 +22,7 @@ export function Header({ address }: HeaderProps) {
       <div className="container mx-auto px-4 flex justify-between items-center">
         <div className="flex items-center space-x-2">
           <Shield className="h-8 w-8 text-black" />
-          <span className="font-bold text-xl text-black">MafiaChain</span>
+          <span className="font-bold text-xl text-black">Cali Mafia</span>
         </div>
         <div className="flex items-center space-x-4">
           <span className="text-sm text-gray-600">Connected:</span>

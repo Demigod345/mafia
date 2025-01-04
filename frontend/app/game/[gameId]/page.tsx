@@ -73,7 +73,7 @@ export default function GameArea() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
           >
-            Mafia Game
+            Cali Mafia
           </motion.h1>
           <div className="flex items-center space-x-4">
             <motion.span
@@ -108,12 +108,12 @@ export default function GameArea() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {gameState && Number(gameState.current_phase) === 6 ? (
+              {gameState && Number(gameState.current_phase) === 5 ? (
                 <VotingPage players={players} onVote={handlePlayerVote} />
               ) : (
                 <>
                   <h2 className="text-xl font-semibold mb-4">
-                    Players ({players.length}/4)
+                    Players ({players.length}/5)
                   </h2>
                   <PlayerList
                     players={players}
@@ -133,7 +133,7 @@ export default function GameArea() {
                         disabled={players.length < 4}
                       >
                         <Play className="w-4 h-4 mr-2" />
-                        Start Game ({players.length}/4 players)
+                        Start Game ({players.length}/5 players)
                       </Button>
                     </motion.div>
                   )}

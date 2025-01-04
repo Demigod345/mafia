@@ -247,10 +247,11 @@ export function useGameState() {
             const call = await connection.execute([
               {
                 contractAddress: contractData.contractAddress,
-                entrypoint: "cast_vote",
+                entrypoint: "vote",
                 calldata: CallData.compile({
                   player: address,
                   game_id: gameId,
+                  day_id: 0,
                   candidate: votedPlayerAddress,
                 }),
               },

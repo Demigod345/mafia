@@ -2,153 +2,8 @@
 
 "use server";
 
-import contractData from "@/contract/data.json";
-import { WindIcon } from "lucide-react";
 import { NextRequest, NextResponse } from "next/server";
-import {
-  RpcProvider,
-  Contract,
-  WalletAccount,
-  CallData,
-  num,
-  shortString,
-} from "starknet";
 
-const provider = new RpcProvider({
-  nodeUrl: process.env.STARKNET_RPC_URL,
-});
-let mafiaContract = null;
-
-async function getContract() {
-  if (mafiaContract === null) {
-    const { abi: contractAbi } = await provider.getClassAt(
-      contractData.contractAddress
-    );
-    if (contractAbi === undefined) {
-      throw new Error("No ABI found for the contract.");
-    }
-    mafiaContract = new Contract(
-      contractAbi,
-      contractData.contractAddress,
-      provider
-    );
-  }
-  return mafiaContract;
-}
-
-type Event =
-  | { "contracts::MafiaGame::GameCreated": { game_id: bigint } }
-  | {
-      "contracts::MafiaGame::GameStarted": {
-        game_id: bigint;
-        player_count: number;
-      };
-    }
-  | {
-      "contracts::MafiaGame::PlayerRegistered": {
-        game_id: bigint;
-        player: bigint;
-        name: bigint;
-      };
-    }
-  | {
-      "contracts::MafiaGame::ModeratorVoteCast": {
-        game_id: bigint;
-        voter: bigint;
-        candidate: bigint;
-        voter_name: bigint;
-        candidate_name: bigint;
-      };
-    }
-  | {
-      "contracts::MafiaGame::ModeratorChosen": {
-        game_id: bigint;
-        moderator: bigint;
-        name: bigint;
-        vote_count: number;
-      };
-    }
-  | {
-      "contracts::MafiaGame::RoleCommitmentSubmitted": {
-        game_id: bigint;
-        player: bigint;
-        player_name: bigint;
-      };
-    }
-  | {
-      "contracts::MafiaGame::VoteSubmitted": {
-        game_id: bigint;
-        voter: bigint;
-        candidate: bigint;
-        voter_name: bigint;
-        candidate_name: bigint;
-        day: number;
-        phase: number;
-      };
-    }
-  | { "contracts::MafiaGame::DayChanged": { game_id: bigint; new_day: number } }
-  | {
-      "contracts::MafiaGame::RoleRevealed": {
-        game_id: bigint;
-        player: bigint;
-        player_name: bigint;
-        role: number;
-      };
-    }
-  | {
-      "contracts::MafiaGame::PlayerEliminated": {
-        game_id: bigint;
-        player: bigint;
-        player_name: bigint;
-        reason: number;
-      };
-    }
-  | {
-      "contracts::MafiaGame::PhaseChanged": {
-        game_id: bigint;
-        new_phase: number;
-      };
-    }
-  | { "contracts::MafiaGame::GameEnded": { game_id: bigint; winner: number } };
-
-function getPhaseText(phase: number): string {
-  switch (phase) {
-    case 0:
-      return "Game not created";
-    case 1:
-      return "Game Setup";
-    case 2:
-      return "Moderator Vote";
-    case 3:
-      return "Role Assignment";
-    case 4:
-      return "Night Phase";
-    case 5:
-      return "Day Phase";
-    default:
-      return "Unknown";
-  }
-}
-
-const PHASE_GAME_NOT_CREATED = 0;
-const PHASE_GAME_SETUP = 1;
-const PHASE_MODERATOR_VOTE = 2;
-const PHASE_ROLE_ASSIGNMENT = 3;
-const PHASE_NIGHT = 4;
-const PHASE_DAY = 5;
-
-const ROLE_UNASSIGNED = 0;
-const ROLE_VILLAGER = 1;
-const ROLE_MAFIA = 2;
-const ROLE_MODERATOR = 3;
-
-const REASON_UNDEFINED = 0;
-const REASON_VOTED_OUT_BY_VILLAGERS = 1;
-const REASON_ELIMINATED_BY_MAFIA = 2;
-
-const WINNER_UNDEFINED = 0;
-const WINNER_VILLAGERS = 1;
-const WINNER_MAFIA = 2;
 
 function getMessages(
   events: Event[]
@@ -231,7 +86,7 @@ function getMessages(
         } else if ("contracts::MafiaGame::RoleRevealed" == key) {
           const details = event["contracts::MafiaGame::RoleRevealed"];
           const playerName = shortString.decodeShortString(details.player_name);
-          const roleText = Number(details.role) === ROLE_VILLAGER ? "Villager" : "Mafia";
+          const roleText = Number(details.role) === 0 ? "Villager" : "Mafia";
           messages.push({
             text: `🎭 *Role revealed:* _${playerName}_ was a _${roleText}_.`,
             type: "SystemMessage",
@@ -240,7 +95,7 @@ function getMessages(
           const details = event["contracts::MafiaGame::PlayerEliminated"];
           const playerName = shortString.decodeShortString(details.player_name);
           const reasonText =
-            Number(details.reason) === REASON_VOTED_OUT_BY_VILLAGERS ? "voted out" : "killed by Mafia";
+            Number(details.reason) === 0 ? "voted out" : "killed by Mafia";
           messages.push({
             text: `💀 *Player eliminated:* _${playerName}_ was ${reasonText}.`,
             type: "SystemMessage",
@@ -255,7 +110,7 @@ function getMessages(
         } else if ("contracts::MafiaGame::GameEnded" == key) {
           const details = event["contracts::MafiaGame::GameEnded"];
           const winnerText =
-            Number(details.winner) === WINNER_VILLAGERS ? "Villagers" : "Mafia";
+            Number(details.winner) === 1 ? "Villagers" : "Mafia";
           messages.push({
             text: `🏆 *Game ended:* _${winnerText}_ win!`,
             type: "SystemMessage",
@@ -336,13 +191,13 @@ export async function POST(req: NextRequest) {
     // generateToken();
     // sendMessage("Testing to see if this works?", data.game_id);
 
-    const txHash = data.transaction_hash;
+    const invitationPayload = data.invitation_payload;
     const gameId = data.game_id;
-    const txReceipt = await provider.waitForTransaction(txHash);
-    const contract = await getContract();
-    const events = contract.parseEvents(txReceipt);
-    console.log(events);
-    const messages = getMessages(events);
+    // const messages = getMessages(events);
+    const messages = [{
+        text: `📩 *Invitation:* ${invitationPayload}`,
+        type: "SystemMessage",
+    }]
     console.log(messages);
     sendMessages(messages, gameId);
 

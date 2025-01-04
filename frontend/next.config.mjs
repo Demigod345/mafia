@@ -31,7 +31,10 @@ const nextConfig = {
         ],
         },
       ]
-     }
+     },
+     images: {
+      domains: ['cdn.dorahacks.io'],
+    },
 };
 
 export default nextConfig;
