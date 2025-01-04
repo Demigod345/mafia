@@ -69,7 +69,7 @@ export function useGameState() {
     } catch (error) {
       console.error("Error fetching game data:", error);
     }
-  }, [gameId, getContract]);
+  }, [gameId]);
 
   const fetchPlayers = useCallback(async () => {
     try {
@@ -104,7 +104,7 @@ export function useGameState() {
     } catch (error) {
       console.error("Error fetching players:", error);
     }
-  }, [gameId, address, getContract]);
+  }, [gameId, address]);
 
   const handleConnectWallet = useCallback(async () => {
     try {
